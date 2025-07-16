@@ -1,1 +1,1 @@
-if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/rutinas-gym-app/sw.js', { scope: '/rutinas-gym-app/' })})}
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('https://JoseZerte.github.io/rutinas-gym-app/sw.js', { scope: 'https://JoseZerte.github.io/rutinas-gym-app/' })})}
