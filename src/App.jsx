@@ -112,7 +112,7 @@ function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEje
                 ))}
                 <button
                     onClick={onAgregarSerie}
-                    className="w-full py-4 mt-2 border border-dashed border-gray-400 bg-gray-500/10 rounded-xl text-green-400/50 font-bold text-sm tracking-wide active:bg-green-500/10 active:text-green-500 transition-all"
+                    className="w-full py-4 mt-2 border border-dashed border-gray-400 bg-gray-500/10 rounded-xl text-green-400/70 font-bold text-sm tracking-wide active:bg-green-500/10 active:text-green-500 transition-all"
                 >
                     + AÑADIR SERIE
                 </button>
@@ -300,7 +300,7 @@ export default function App() {
                         </div>
                         <div className={`mt-8 pt-6 border-t ${darkMode ? 'border-gray-800/50' : 'border-gray-300'} flex gap-2`}>
                             <input type="text" placeholder="Nueva rutina..." value={nuevoGrupo} onChange={e => setNuevoGrupo(e.target.value)} className={`flex-1 ${inputBg} border ${borderColor} rounded-xl px-4 py-3 ${darkMode ? 'text-white' : 'text-black'} focus:border-blue-500 outline-none`} />
-                            <button onClick={() => { if(!nuevoGrupo.trim()) return; setRutinas(p => ({...p, [nuevoGrupo.trim()]: []})); setNuevoGrupo(''); }} className="bg-blue-600 px-6 rounded-xl font-bold text-white shadow-lg shadow-blue-500/30">+</button>
+                            <button onClick={() => { if(!nuevoGrupo.trim()) return; setRutinas(p => ({...p, [nuevoGrupo.trim()]: []})); setNuevoGrupo(''); }} className="bg-blue-600 px-6 rounded-xl font-bold text-white">+</button>
                         </div>
                     </div>
                 ) : (
@@ -352,7 +352,7 @@ export default function App() {
                                     <input type="text" placeholder="Nuevo ejercicio..." value={nuevoEjercicio} onChange={e => setNuevoEjercicio(e.target.value)} className={`flex-1 ${inputBg} border ${borderColor} rounded-xl px-4 py-4 ${darkMode ? 'text-white' : 'text-black'} focus:border-blue-500 outline-none`} />
                                     <button onClick={agregarEjercicio} className={`font-bold px-6 rounded-xl border active:scale-95 transition-all ${darkMode ? 'bg-gray-800 text-blue-400 border-gray-700' : 'bg-white text-blue-600 border-gray-300 shadow-sm'}`}>AÑADIR</button>
                                 </div>
-                                <button onClick={confirmarRutina} className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-blue-500/30 active:scale-[0.98] transition-all">GUARDAR ENTRENAMIENTO</button>
+                                <button onClick={confirmarRutina} className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl active:scale-[0.98] transition-all">GUARDAR ENTRENAMIENTO</button>
                             </div>
                         </div>
                     </>
