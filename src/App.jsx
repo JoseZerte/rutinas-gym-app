@@ -22,8 +22,7 @@ const GlobalStyles = ({ darkMode }) => (
       margin: 0;
       padding: 0;
       width: 100%;
-      /* FIX: Usamos 'clip' en lugar de 'hidden' para que el position:sticky funcione y el menú te siga */
-      overflow-x: clip; 
+      overflow-x: clip; /* FIX: Permite el sticky pero bloquea el scroll lateral */
       overscroll-behavior-y: none;
     }
     * {
@@ -169,6 +168,10 @@ export default function App() {
 
     const [gruposel, setgruposel] = useState(null);
     const [rutinas, setRutinas] = useState(() => JSON.parse(localStorage.getItem('rutinas')) || { 'Pecho - Triceps': [] });
+
+    // --- NUEVO: Estado separado para guardar las fotos de las rutinas sin romper tus datos ---
+    const [rutinaImages, setRutinaImages] = useState(() => JSON.parse(localStorage.getItem('rutinaImages')) || {});
+
     const [nuevoEjercicio, setNuevoEjercicio] = useState('');
     const [nuevoGrupo, setNuevoGrupo] = useState('');
     const [confirmacionVisible, setConfirmacionVisible] = useState(false);
@@ -184,6 +187,7 @@ export default function App() {
     useEffect(() => { localStorage.setItem('rutinas', JSON.stringify(rutinas)); }, [rutinas]);
     useEffect(() => { localStorage.setItem('gymConfig', JSON.stringify(config)); }, [config]);
     useEffect(() => { localStorage.setItem('gymTheme', JSON.stringify(darkMode)); }, [darkMode]);
+    useEffect(() => { localStorage.setItem('rutinaImages', JSON.stringify(rutinaImages)); }, [rutinaImages]);
 
     const onTouchStart = (e) => { touchEnd.current = null; touchStart.current = e.targetTouches[0].clientX; }
     const onTouchMove = (e) => { touchEnd.current = e.targetTouches[0].clientX; }
@@ -260,8 +264,55 @@ export default function App() {
         setTimeout(() => setConfirmacionVisible(false), 2000);
     };
 
+    // --- LÓGICA DE COMPRESIÓN DE IMÁGENES PARA NO SATURAR EL MÓVIL ---
+    const handleImageUpload = (e, grupo) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                // Recortamos la imagen a 200x200 para que ocupe muy poca memoria
+                const size = 200;
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                // Recorte cuadrado centrado
+                const minSize = Math.min(img.width, img.height);
+                const startX = (img.width - minSize) / 2;
+                const startY = (img.height - minSize) / 2;
+
+                ctx.drawImage(img, startX, startY, minSize, minSize, 0, 0, size, size);
+
+                // Guardamos como JPEG comprimido
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                setRutinaImages(prev => ({...prev, [grupo]: dataUrl}));
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const borrarRutinaYFoto = (grupo) => {
+        if(window.confirm(`¿Borrar "${grupo}"?`)) {
+            const c = {...rutinas};
+            delete c[grupo];
+            setRutinas(c);
+
+            // Borramos también la foto para liberar memoria
+            const imgs = {...rutinaImages};
+            delete imgs[grupo];
+            setRutinaImages(imgs);
+        }
+    };
+
     const mainBg = darkMode ? 'bg-gradient-to-br from-[#05070a] via-[#0a0d14] to-[#020305] text-gray-200' : 'bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0] text-gray-900';
     const textGradient = 'bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500';
+    const cardBg = darkMode ? 'bg-[#111318]' : 'bg-white';
+    const borderColor = darkMode ? 'border-gray-800' : 'border-gray-200';
 
     return (
         <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 ${mainBg}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
@@ -304,11 +355,29 @@ export default function App() {
 
                         <div className="space-y-4">
                             {Object.keys(rutinas).map(grupo => (
-                                <div key={grupo} className="flex items-stretch rounded-[1.5rem] overflow-hidden glass-border glass-effect transition-transform active:scale-[0.98]">
-                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-6 text-left">
-                                        <span className={`text-[1.3rem] font-black uppercase tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
+                                <div key={grupo} className={`flex items-stretch rounded-[1.5rem] overflow-hidden glass-border glass-effect transition-transform active:scale-[0.98]`}>
+
+                                    {/* --- NUEVO: ÁREA DE FOTO DE RUTINA --- */}
+                                    <div className={`relative w-24 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
+                                        {rutinaImages[grupo] ? (
+                                            <img src={rutinaImages[grupo]} alt={grupo} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="flex flex-col items-center gap-1 opacity-40">
+                                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                <span className="text-[8px] font-black uppercase tracking-widest">FOTO</span>
+                                            </div>
+                                        )}
+                                        {/* Input invisible encima para subir foto */}
+                                        <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, grupo)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    </div>
+
+                                    {/* Botón de seleccionar rutina */}
+                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-5 text-left active:opacity-80">
+                                        <span className={`text-[1.2rem] font-black uppercase tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
                                     </button>
-                                    <button onClick={() => { if(window.confirm(`¿Borrar "${grupo}"?`)) { const c = {...rutinas}; delete c[grupo]; setRutinas(c); }}} className="w-16 flex items-center justify-center text-red-500/80 active:bg-red-500/10 transition-colors border-l border-white/5">
+
+                                    {/* Botón Eliminar */}
+                                    <button onClick={() => borrarRutinaYFoto(grupo)} className={`w-14 flex items-center justify-center text-red-500/80 active:bg-red-500/10 transition-colors border-l ${darkMode ? 'border-white/5' : 'border-black/5'}`}>
                                         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
@@ -316,7 +385,7 @@ export default function App() {
                         </div>
                         <div className="mt-8 pt-8 border-t border-gray-500/20 flex gap-3">
                             <input type="text" placeholder="Añadir nueva rutina..." value={nuevoGrupo} onChange={e => setNuevoGrupo(e.target.value)} className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} font-medium outline-none focus:border-blue-500/50`} />
-                            <button onClick={() => { if(!nuevoGrupo.trim()) return; setRutinas(p => ({...p, [nuevoGrupo.trim()]: []})); setNuevoGrupo(''); }} className="bg-blue-600 px-7 rounded-2xl font-black text-2xl text-white active:scale-95 transition-transform">+</button>
+                            <button onClick={() => { if(!nuevoGrupo.trim()) return; setRutinas(p => ({...p, [nuevoGrupo.trim()]: []})); setNuevoGrupo(''); }} className="bg-blue-600 px-7 rounded-2xl font-black text-2xl text-white active:scale-95 transition-transform border-none outline-none">+</button>
                         </div>
                     </div>
                 ) : (
@@ -330,9 +399,8 @@ export default function App() {
                                 <h2 className={`text-2xl font-black uppercase tracking-tight truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{gruposel}</h2>
                             </div>
 
-                            {/* CRONÓMETRO PEQUEÑO COMO LO QUERÍAS */}
                             {timerActivo && (
-                                <div className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between animate-in zoom-in-95 duration-200 shadow-lg shadow-blue-500/20">
+                                <div className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between animate-in zoom-in-95 duration-200">
                                     <span className="text-xs font-black uppercase text-blue-100 tracking-widest opacity-90">Descanso</span>
                                     <span className="text-2xl font-black tabular-nums text-white">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
                                     <button onClick={() => setTimerActivo(false)} className="text-[10px] font-black bg-black/20 text-white px-3 py-1.5 rounded-md uppercase tracking-wider">Saltar</button>
@@ -358,12 +426,13 @@ export default function App() {
                                 </SortableContext>
                             </DndContext>
 
+                            {/* BOTONES MATE SIN SOMBRAS */}
                             <div className="mt-8 space-y-4 pb-8">
                                 <div className="flex gap-3">
                                     <input type="text" placeholder="Nombre del ejercicio..." value={nuevoEjercicio} onChange={e => setNuevoEjercicio(e.target.value)} className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} focus:border-blue-500/50 outline-none`} />
-                                    <button onClick={agregarEjercicio} className={`font-black tracking-widest uppercase px-6 rounded-2xl active:scale-95 transition-transform ${darkMode ? 'bg-white/10 text-blue-400' : 'bg-black/5 text-blue-600'}`}>AÑADIR</button>
+                                    <button onClick={agregarEjercicio} className={`font-bold px-6 rounded-xl border border-transparent active:scale-95 transition-all ${darkMode ? 'bg-gray-800 text-blue-400' : 'bg-gray-200 text-blue-600'}`}>AÑADIR</button>
                                 </div>
-                                <button onClick={confirmarRutina} className="w-full py-6 bg-blue-600 text-white font-black text-lg tracking-widest rounded-2xl active:scale-[0.98] transition-transform">GUARDAR ENTRENAMIENTO</button>
+                                <button onClick={confirmarRutina} className="w-full py-5 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl active:scale-[0.98] transition-all border-none outline-none">GUARDAR ENTRENAMIENTO</button>
                             </div>
                         </div>
                     </>
