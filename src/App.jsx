@@ -22,7 +22,8 @@ const GlobalStyles = ({ darkMode }) => (
       margin: 0;
       padding: 0;
       width: 100%;
-      overflow-x: hidden;
+      /* FIX: Usamos 'clip' en lugar de 'hidden' para que el position:sticky funcione y el menú te siga */
+      overflow-x: clip; 
       overscroll-behavior-y: none;
     }
     * {
@@ -62,7 +63,6 @@ const GlobalStyles = ({ darkMode }) => (
 function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onToggleCheck, darkMode }) {
     const confirmarEliminar = () => { if (window.confirm("¿Borrar esta serie?")) onEliminar(); };
 
-    // UI Premium: Si está completada se ilumina suavemente, si no, usa cristal.
     const containerClasses = serie.completada
         ? 'bg-blue-600/10 border-blue-500/30'
         : 'glass-effect glass-border';
@@ -148,7 +148,6 @@ function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEje
                         onToggleCheck={() => onActualizarSerie(serie.id, 'completada', !serie.completada)}
                     />
                 ))}
-                {/* BOTÓN AÑADIR SERIE - Con el verde elegante y destello al pulsar */}
                 <button
                     onClick={onAgregarSerie}
                     className="w-full py-4 mt-1 border border-dashed border-green-500/20 bg-green-500/5 rounded-2xl text-green-500/80 font-black text-[11px] uppercase tracking-widest active:bg-green-500/20 active:text-green-400 active:border-green-500/50 transition-all"
@@ -331,13 +330,12 @@ export default function App() {
                                 <h2 className={`text-2xl font-black uppercase tracking-tight truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{gruposel}</h2>
                             </div>
 
+                            {/* CRONÓMETRO PEQUEÑO COMO LO QUERÍAS */}
                             {timerActivo && (
-                                <div className="mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[1.5rem] p-5 flex items-center justify-between animate-in slide-in-from-top-4 duration-300">
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1">Descanso Activo</span>
-                                        <span className="text-4xl font-black tabular-nums text-white tracking-tighter">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
-                                    </div>
-                                    <button onClick={() => setTimerActivo(false)} className="text-[11px] font-black bg-white/20 text-white px-4 py-2.5 rounded-xl uppercase tracking-widest active:bg-white/30 transition-colors">Saltar</button>
+                                <div className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between animate-in zoom-in-95 duration-200 shadow-lg shadow-blue-500/20">
+                                    <span className="text-xs font-black uppercase text-blue-100 tracking-widest opacity-90">Descanso</span>
+                                    <span className="text-2xl font-black tabular-nums text-white">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
+                                    <button onClick={() => setTimerActivo(false)} className="text-[10px] font-black bg-black/20 text-white px-3 py-1.5 rounded-md uppercase tracking-wider">Saltar</button>
                                 </div>
                             )}
                         </div>
