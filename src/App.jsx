@@ -166,19 +166,41 @@ export default function App() {
         }
     }
 
+    // --- NUEVA LÓGICA DE CRONÓMETRO Y NOTIFICACIONES ---
     const iniciarTimer = () => {
+        // Pedimos permiso para enviar notificaciones la primera vez
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Calculamos la hora exacta en la que tiene que acabar (Tiempo actual + Descanso)
+        const tiempoFinal = Date.now() + (config.descanso * 1000);
         setTiempo(config.descanso);
         setTimerActivo(true);
+
         if (timerRef.current) clearInterval(timerRef.current);
+
         timerRef.current = setInterval(() => {
-            setTiempo(prev => {
-                if (prev <= 1) {
-                    clearInterval(timerRef.current);
-                    setTimeout(() => setTimerActivo(false), 2000);
-                    return 0;
+            const ahora = Date.now();
+            // Restamos para saber cuántos segundos faltan (inmune a pausas del sistema)
+            const restante = Math.round((tiempoFinal - ahora) / 1000);
+
+            if (restante <= 0) {
+                clearInterval(timerRef.current);
+                setTiempo(0);
+
+                // --- LANZAR NOTIFICACIÓN Y VIBRACIÓN AL TERMINAR ---
+                if (navigator.vibrate) navigator.vibrate([500, 200, 500]); // Patrón: vibra-pausa-vibra
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification("⏱️ ¡Descanso terminado!", {
+                        body: "Prepárate para la siguiente serie. ¡A darle duro!",
+                    });
                 }
-                return prev - 1;
-            });
+
+                setTimeout(() => setTimerActivo(false), 2000);
+            } else {
+                setTiempo(restante);
+            }
         }, 1000);
     };
 
