@@ -311,8 +311,7 @@ export default function App() {
 
     const mainBg = darkMode ? 'bg-gradient-to-br from-[#05070a] via-[#0a0d14] to-[#020305] text-gray-200' : 'bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0] text-gray-900';
     const textGradient = 'bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500';
-    const cardBg = darkMode ? 'bg-[#111318]' : 'bg-white';
-    const borderColor = darkMode ? 'border-gray-800' : 'border-gray-200';
+
 
     return (
         <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 ${mainBg}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
@@ -357,23 +356,36 @@ export default function App() {
                             {Object.keys(rutinas).map(grupo => (
                                 <div key={grupo} className={`flex items-stretch rounded-[1.5rem] overflow-hidden glass-border glass-effect transition-transform active:scale-[0.98]`}>
 
-                                    {/* --- NUEVO: ÁREA DE FOTO DE RUTINA --- */}
-                                    <div className={`relative w-24 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
+                                    {/* --- ÁREA DE FOTO DE RUTINA --- */}
+                                    <div className={`relative w-16 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
                                         {rutinaImages[grupo] ? (
-                                            <img src={rutinaImages[grupo]} alt={grupo} className="w-full h-full object-cover" />
+                                            <button
+                                                onClick={() => {
+                                                    if(window.confirm("¿Eliminar la foto de esta rutina?")) {
+                                                        const imgs = {...rutinaImages};
+                                                        delete imgs[grupo];
+                                                        setRutinaImages(imgs);
+                                                    }
+                                                }}
+                                                className="absolute inset-0 w-full h-full block"
+                                            >
+                                                {/* Imagen a opacidad completa, sin iconos molestos encima */}
+                                                <img src={rutinaImages[grupo]} alt={grupo} className="w-full h-full object-cover" />
+                                            </button>
                                         ) : (
-                                            <div className="flex flex-col items-center gap-1 opacity-40">
-                                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                <span className="text-[8px] font-black uppercase tracking-widest">FOTO</span>
-                                            </div>
+                                            <>
+                                                <div className="flex flex-col items-center gap-1 opacity-40">
+                                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
+                                                </div>
+                                                {/* El input de subir foto SOLO está activo si NO hay foto */}
+                                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, grupo)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                            </>
                                         )}
-                                        {/* Input invisible encima para subir foto */}
-                                        <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, grupo)} className="absolute inset-0 opacity-0 cursor-pointer" />
                                     </div>
 
                                     {/* Botón de seleccionar rutina */}
-                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-5 text-left active:opacity-80">
-                                        <span className={`text-[1.2rem] font-black uppercase tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
+                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-4 text-left active:opacity-80 overflow-hidden">
+                                        <span className={`block w-full text-[1rem] font-black uppercase tracking-tight truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
                                     </button>
 
                                     {/* Botón Eliminar */}
