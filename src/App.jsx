@@ -357,7 +357,7 @@ export default function App() {
                                 <div key={grupo} className={`flex items-stretch rounded-[1.5rem] overflow-hidden glass-border glass-effect transition-transform active:scale-[0.98]`}>
 
                                     {/* --- ÁREA DE FOTO DE RUTINA --- */}
-                                    <div className={`relative w-16 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
+                                    <div className={`relative w-20 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
                                         {rutinaImages[grupo] ? (
                                             <button
                                                 onClick={() => {
@@ -384,8 +384,8 @@ export default function App() {
                                     </div>
 
                                     {/* Botón de seleccionar rutina */}
-                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-4 text-left active:opacity-80 overflow-hidden">
-                                        <span className={`block w-full text-[1rem] font-black uppercase tracking-tight truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
+                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-5 text-left active:opacity-80 overflow-hidden">
+                                        <span className={`block w-full text-[1.15rem] font-black uppercase tracking-tight truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
                                     </button>
 
                                     {/* Botón Eliminar */}
