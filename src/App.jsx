@@ -3,7 +3,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-// --- BASE DE DATOS DE EJERCICIOS (Librería) ---
+// --- BASE DE DATOS DE EJERCICIOS ---
 const LIBRERIA_EJERCICIOS = [
     { nombre: "Press de Banca", imagen: "/ejercicios/pressbanca.png" },
     { nombre: "Sentadilla", imagen: "/ejercicios/sentadilla.png" },
@@ -18,6 +18,104 @@ const LIBRERIA_EJERCICIOS = [
 const LISTA_MUSCULOS = ["Pecho", "Espalda", "Pierna", "Hombro", "Bíceps", "Tríceps", "Glúteo", "Abdomen", "Cardio"];
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const DIAS_SEMANA = ["L", "M", "X", "J", "V", "S", "D"];
+
+// --- LÓGICA DE GAMIFICACIÓN INTELIGENTE (1RM Y RANGOS) ---
+
+// Motor de reconocimiento de palabras clave (LISTA BLANCA VIP)
+const analizarMusculo = (nombre) => {
+    if (!nombre) return 'desconocido';
+    const texto = nombre.toLowerCase();
+    const usaMancuerna = texto.includes('mancuerna') || texto.includes('mancuernas');
+    const usaBarra = texto.includes('barra');
+
+    // ✅ EJERCICIOS BÁSICOS Y VÁLIDOS PARA 1RM (LISTA BLANCA)
+
+    // PECHO
+    if (texto.includes('inclinado')) return usaMancuerna ? 'pecho_inclinado_mancuerna' : 'pecho_inclinado_barra';
+    if (texto.includes('banca') || texto.includes('pecho') || texto.includes('pec') || texto.includes('press plano')) return usaMancuerna ? 'pecho_plano_mancuerna' : 'pecho_plano_barra';
+
+    // HOMBRO
+    if (texto.includes('militar') || texto.includes('press hombro') || texto.includes('shoulder')) return usaMancuerna ? 'hombro_fuerza_mancuerna' : 'hombro_fuerza_barra';
+
+    // PIERNA & GLÚTEO
+    if (texto.includes('sentadilla') || texto.includes('squat') || texto.includes('prensa')) return 'pierna_fuerza';
+    if (texto.includes('hip thrust') || texto.includes('puente')) return 'gluteo_fuerza';
+
+    // ESPALDA
+    if (texto.includes('muerto') || texto.includes('deadlift')) return 'espalda_fuerza';
+    if (texto.includes('dominada') || texto.includes('pull') || texto.includes('remo') || texto.includes('jalon')) return 'espalda_traccion';
+
+    // BÍCEPS (Dos mundos distintos)
+    if (texto.includes('bicep') || texto.includes('bícep') || texto.includes('curl')) {
+        if (usaMancuerna) return 'biceps_mancuerna';
+        if (usaBarra) return 'biceps_barra';
+        return 'biceps_general'; // Por si no especificas material
+    }
+
+    // TRÍCEPS
+    if (texto.includes('tricep') || texto.includes('trícep') || texto.includes('francés') || texto.includes('fondo')) return 'triceps_fuerza';
+
+    // 🛑 Todo lo que NO esté explícitamente en la lista de arriba (accesorios, inventos, tonterías) se ignora
+    return 'desconocido';
+};
+
+// Promedio entre fórmulas de Epley y Brzycki con ajustes biomecánicos
+const calcular1RMInteligente = (peso, reps, ejercicioNombre) => {
+    if (!peso || !reps || reps <= 0) return 0;
+
+    let pesoReal = parseFloat(peso);
+    const categoria = analizarMusculo(ejercicioNombre);
+
+    const epley = pesoReal * (1 + reps / 30);
+    const brzycki = pesoReal * (36 / (37 - reps));
+    return Math.round((epley + brzycki) / 2);
+};
+
+// Asigna rangos leyendo el texto que hayas escrito
+const obtenerRango = (rm, ejercicioNombre) => {
+    if (rm === 0) return null;
+
+    const categoria = analizarMusculo(ejercicioNombre);
+
+    // 🛑 SI ES UN EJERCICIO NO BÁSICO O NO LO RECONOCE, NO HAY RANGO
+    if (categoria === 'desconocido') return null;
+
+    let multiplicador = 1;
+    switch (categoria) {
+        case 'pierna_fuerza': multiplicador = 0.6; break;
+        case 'espalda_fuerza': multiplicador = 0.5; break;
+        case 'gluteo_fuerza': multiplicador = 0.5; break;
+
+        case 'pecho_plano_barra': multiplicador = 1.0; break;
+        case 'pecho_plano_mancuerna': multiplicador = 2.1; break; // RM por mano x2 + premio estabilización
+
+        case 'pecho_inclinado_barra': multiplicador = 1.2; break;
+        case 'pecho_inclinado_mancuerna': multiplicador = 2.5; break; // RM por mano x2 + premio inclinado
+
+        case 'espalda_traccion': multiplicador = 1.2; break;
+
+        case 'hombro_fuerza_barra': multiplicador = 1.6; break;
+        case 'hombro_fuerza_mancuerna': multiplicador = 3.3; break; // RM por mano x2 + premio militar
+
+        case 'triceps_fuerza': multiplicador = 3.0; break;
+
+        case 'biceps_barra': multiplicador = 3.5; break;
+        case 'biceps_general': multiplicador = 4.0; break;
+        case 'biceps_mancuerna': multiplicador = 5.0; break; // Mucho premio porque el peso se divide y aísla a una mano
+
+        default: multiplicador = 1;
+    }
+
+    const score = rm * multiplicador;
+
+    if (score < 45) return { nombre: "NOVATO", color: "text-gray-500", bg: "bg-gray-500/20" };
+    if (score < 65) return { nombre: "PRINCIPIANTE", color: "text-green-500", bg: "bg-green-500/20" };
+    if (score < 90) return { nombre: "INTERMEDIO", color: "text-blue-500", bg: "bg-blue-500/20" };
+    if (score < 120) return { nombre: "AVANZADO", color: "text-purple-500", bg: "bg-purple-500/20" };
+    if (score < 155) return { nombre: "ÉLITE", color: "text-red-500", bg: "bg-red-500/20" };
+    if (score < 190) return { nombre: "SEMIDIÓS", color: "text-orange-500", bg: "bg-orange-500/20" };
+    return { nombre: "OLÍMPICO 👑", color: "text-yellow-500", bg: "bg-yellow-500/20" };
+};
 
 const obtenerFechaLocal = () => {
     const hoy = new Date();
@@ -57,7 +155,50 @@ const GlobalStyles = ({ darkMode }) => (
   `}</style>
 );
 
-function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onToggleCheck, darkMode, showConfirm }) {
+// --- COMPONENTE DE GRÁFICA SVG LIGERA ---
+const LineChart = ({ data, darkMode }) => {
+    if (!data || data.length === 0) return <div className="p-4 text-center text-gray-500 font-bold text-sm">No hay datos suficientes para este ejercicio.</div>;
+    if (data.length === 1) return <div className="p-4 text-center text-gray-500 font-bold text-sm">Registra este ejercicio un día más para ver tu evolución.</div>;
+
+    const paddingX = 30;
+    const paddingY = 40;
+    const w = 400;
+    const h = 200;
+
+    const maxVal = Math.max(...data.map(d => d.rm));
+    const minVal = Math.min(...data.map(d => d.rm));
+
+    // Evitar división por cero si todos los valores son iguales
+    const range = (maxVal - minVal) === 0 ? 1 : (maxVal - minVal);
+
+    const points = data.map((d, i) => {
+        const x = paddingX + (i / (data.length - 1)) * (w - paddingX * 2);
+        const y = h - paddingY - ((d.rm - minVal) / range) * (h - paddingY * 2);
+        return `${x},${y}`;
+    }).join(' ');
+
+    return (
+        <div className="w-full overflow-hidden mt-4">
+            <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto drop-shadow-lg">
+                <polyline points={points} fill="none" stroke={darkMode ? "#3b82f6" : "#2563eb"} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                {data.map((d, i) => {
+                    const x = paddingX + (i / (data.length - 1)) * (w - paddingX * 2);
+                    const y = h - paddingY - ((d.rm - minVal) / range) * (h - paddingY * 2);
+                    return (
+                        <g key={i}>
+                            <circle cx={x} cy={y} r="6" fill={darkMode ? "#030507" : "#ffffff"} stroke={darkMode ? "#60a5fa" : "#3b82f6"} strokeWidth="3" />
+                            <text x={x} y={y - 15} textAnchor="middle" fill={darkMode ? "#e5e7eb" : "#374151"} fontSize="12" fontWeight="900">{d.rm}kg</text>
+                            {/* Mostrar día y mes debajo */}
+                            <text x={x} y={h - 10} textAnchor="middle" fill={darkMode ? "#9ca3af" : "#6b7280"} fontSize="10" fontWeight="bold">{d.fecha.split('-').slice(1).reverse().join('/')}</text>
+                        </g>
+                    )
+                })}
+            </svg>
+        </div>
+    );
+};
+
+function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onToggleCheck, darkMode, showConfirm, ejercicioNombre, mostrar1RM }) {
     const confirmarEliminar = () => { showConfirm("Borrar Serie", "¿Estás seguro de que quieres borrar esta serie?", onEliminar); };
 
     const containerClasses = serie.completada ? 'bg-blue-600/10 border-blue-500/30' : 'glass-effect glass-border';
@@ -68,18 +209,30 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
     const handleStepPeso = (inc) => onChangePeso(modificarNumeroInteligente(serie.nuevoPeso || serie.peso || "0", inc));
     const handleStepReps = (inc) => onChangeReps(modificarNumeroInteligente(serie.nuevoReps || serie.reps || "0", inc));
 
+    // Cálculos en vivo de Gamificación (Llamando al nuevo RM Inteligente)
+    const pesoCalc = parseFloat(serie.nuevoPeso || serie.peso || 0);
+    const repsCalc = parseFloat(serie.nuevoReps || serie.reps || 0);
+    const rm = calcular1RMInteligente(pesoCalc, repsCalc, ejercicioNombre);
+    const rango = obtenerRango(rm, ejercicioNombre);
+
     return (
         <div className={`p-4 rounded-2xl border mb-3 transition-all duration-300 ${containerClasses}`}>
             <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                    <button onClick={onToggleCheck} className={`w-7 h-7 rounded-xl border-2 flex items-center justify-center transition-all duration-300 ${serie.completada ? 'bg-blue-600 border-blue-600' : 'border-gray-500/50'}`}>
+                <div className="flex items-center gap-3 flex-1">
+                    <button onClick={onToggleCheck} className={`w-7 h-7 rounded-xl border-2 flex items-center justify-center transition-all duration-300 shrink-0 ${serie.completada ? 'bg-blue-600 border-blue-600' : 'border-gray-500/50'}`}>
                         {serie.completada && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     </button>
-                    <span className={`flex-none w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-black tracking-tighter ${darkMode ? 'bg-white/10 text-gray-400' : 'bg-black/5 text-gray-500'}`}>
+                    <span className={`flex-none w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-black tracking-tighter shrink-0 ${darkMode ? 'bg-white/10 text-gray-400' : 'bg-black/5 text-gray-500'}`}>
                         {index + 1}
                     </span>
+                    {/* INSIGNIA DE RANGO Y 1RM EN VIVO (Muestra solo si está activado en Ajustes) */}
+                    {mostrar1RM && rango && (
+                        <div className={`ml-1 px-2.5 py-1 rounded-lg ${rango.bg} ${rango.color} text-[9px] font-black uppercase tracking-widest truncate animate-in zoom-in duration-200`}>
+                            {rango.nombre} <span className="opacity-50 mx-1">•</span> 1RM: {rm}KG
+                        </div>
+                    )}
                 </div>
-                <button onClick={confirmarEliminar} className="text-red-500/80 active:text-red-500 p-2 transition-colors rounded-lg active:bg-red-500/10">
+                <button onClick={confirmarEliminar} className="text-red-500/80 active:text-red-500 p-2 transition-colors rounded-lg active:bg-red-500/10 shrink-0 ml-2">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
             </div>
@@ -107,7 +260,7 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
     );
 }
 
-function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEjercicio, onEditarNombre, darkMode, showConfirm }) {
+function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEjercicio, onEditarNombre, darkMode, showConfirm, mostrar1RM }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ejercicio.id });
     const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : 1, opacity: isDragging ? 0.9 : 1 };
 
@@ -136,7 +289,7 @@ function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEje
             <div className="p-4">
                 {ejercicio.series.map((serie, index) => (
                     <SerieInput
-                        key={serie.id} index={index} serie={serie} darkMode={darkMode} showConfirm={showConfirm}
+                        key={serie.id} index={index} serie={serie} darkMode={darkMode} showConfirm={showConfirm} ejercicioNombre={ejercicio.nombre} mostrar1RM={mostrar1RM}
                         onChangePeso={v => onActualizarSerie(serie.id, 'nuevoPeso', v)}
                         onChangeReps={v => onActualizarSerie(serie.id, 'nuevoReps', v)}
                         onEliminar={() => onActualizarSerie(serie.id, 'eliminar')}
@@ -158,12 +311,11 @@ export default function App() {
     const [seccion, setSeccion] = useState('rutinas');
     const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('gymConfig')) || { descanso: 120 });
     const [darkMode, setDarkMode] = useState(() => { const saved = localStorage.getItem('gymTheme'); return saved !== null ? JSON.parse(saved) : true; });
+    const [mostrar1RM, setMostrar1RM] = useState(() => { const saved = localStorage.getItem('gymMostrar1RM'); return saved !== null ? JSON.parse(saved) : true; });
 
     const [gruposel, setgruposel] = useState(null);
     const [rutinas, setRutinas] = useState(() => JSON.parse(localStorage.getItem('rutinas')) || { 'Pecho - Triceps': [] });
     const [rutinaImages, setRutinaImages] = useState(() => JSON.parse(localStorage.getItem('rutinaImages')) || {});
-
-    // --- ESTADO HISTORIAL ---
     const [historial, setHistorial] = useState(() => JSON.parse(localStorage.getItem('gymHistorial')) || {});
 
     const [nuevoEjercicio, setNuevoEjercicio] = useState('');
@@ -172,10 +324,17 @@ export default function App() {
     const [tiempo, setTiempo] = useState(0);
     const [timerActivo, setTimerActivo] = useState(false);
 
-    // Controles Pop-ups
+    // Controles Modales
     const [mostrarLibreria, setMostrarLibreria] = useState(false);
     const [mostrarCreadorRutinas, setMostrarCreadorRutinas] = useState(false);
     const [musculosSeleccionados, setMusculosSeleccionados] = useState([]);
+    const [mostrarGraficas, setMostrarGraficas] = useState(false);
+    const [ejercicioGrafica, setEjercicioGrafica] = useState('');
+
+    // Controles Calculadora 1RM Aislada (Ajustes)
+    const [calcPeso, setCalcPeso] = useState('');
+    const [calcReps, setCalcReps] = useState('');
+    const [calcEj, setCalcEj] = useState('Press de Banca');
 
     // Controles Calendario Progreso
     const [fechaCalendario, setFechaCalendario] = useState(new Date());
@@ -195,6 +354,7 @@ export default function App() {
     useEffect(() => { localStorage.setItem('rutinas', JSON.stringify(rutinas)); }, [rutinas]);
     useEffect(() => { localStorage.setItem('gymConfig', JSON.stringify(config)); }, [config]);
     useEffect(() => { localStorage.setItem('gymTheme', JSON.stringify(darkMode)); }, [darkMode]);
+    useEffect(() => { localStorage.setItem('gymMostrar1RM', JSON.stringify(mostrar1RM)); }, [mostrar1RM]);
     useEffect(() => { localStorage.setItem('rutinaImages', JSON.stringify(rutinaImages)); }, [rutinaImages]);
     useEffect(() => { localStorage.setItem('gymHistorial', JSON.stringify(historial)); }, [historial]);
 
@@ -202,7 +362,7 @@ export default function App() {
     const onTouchMove = (e) => { touchEnd.current = e.targetTouches[0].clientX; }
     const onTouchEnd = () => {
         if (!touchStart.current || !touchEnd.current) return;
-        if (touchStart.current - touchEnd.current < -100 && gruposel !== null && !mostrarLibreria && !mostrarCreadorRutinas) setgruposel(null);
+        if (touchStart.current - touchEnd.current < -100 && gruposel !== null && !mostrarLibreria && !mostrarCreadorRutinas && !mostrarGraficas) setgruposel(null);
     }
 
     const iniciarTimer = () => {
@@ -231,21 +391,8 @@ export default function App() {
             const nombreFinal = nuevoNombre.trim();
             if (!nombreFinal || nombreFinal === nombreViejo) return;
             if (rutinas[nombreFinal]) { alert("Ese nombre ya existe."); return; }
-
-            setRutinas(prev => {
-                const copia = { ...prev };
-                copia[nombreFinal] = copia[nombreViejo];
-                delete copia[nombreViejo];
-                return copia;
-            });
-            setRutinaImages(prev => {
-                const copia = { ...prev };
-                if (copia[nombreViejo]) {
-                    copia[nombreFinal] = copia[nombreViejo];
-                    delete copia[nombreViejo];
-                }
-                return copia;
-            });
+            setRutinas(prev => { const copia = { ...prev }; copia[nombreFinal] = copia[nombreViejo]; delete copia[nombreViejo]; return copia; });
+            setRutinaImages(prev => { const copia = { ...prev }; if (copia[nombreViejo]) { copia[nombreFinal] = copia[nombreViejo]; delete copia[nombreViejo]; } return copia; });
             if (gruposel === nombreViejo) setgruposel(nombreFinal);
         });
     };
@@ -304,31 +451,20 @@ export default function App() {
     };
 
     const confirmarRutina = () => {
-        // 1. Crear el snapshot de cómo quedará la rutina para el historial
         const rutinaActualizada = rutinas[gruposel].map(ej => ({
             ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false }))
         }));
-
-        // 2. Guardar en el historial de la fecha actual
         const fechaLocal = obtenerFechaLocal();
         setHistorial(prev => {
             const nuevo = { ...prev };
-            // Si hacemos varios entrenos en un día, se van apilando en un array
             nuevo[fechaLocal] = [...(nuevo[fechaLocal] || []), { nombre: gruposel, ejercicios: JSON.parse(JSON.stringify(rutinaActualizada)) }];
             return nuevo;
         });
-
-        // 3. Limpiar estado de la rutina actual en el menú principal
         setRutinas(prev => {
             const act = { ...prev };
-            for (const g in act) {
-                act[g] = act[g].map(ej => ({
-                    ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false }))
-                }));
-            }
+            for (const g in act) { act[g] = act[g].map(ej => ({ ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false })) })); }
             return act;
         });
-
         setConfirmacionVisible(true);
         setTimeout(() => setConfirmacionVisible(false), 2000);
     };
@@ -346,9 +482,7 @@ export default function App() {
                 canvas.height = size;
                 const ctx = canvas.getContext('2d');
                 const minSize = Math.min(img.width, img.height);
-                const startX = (img.width - minSize) / 2;
-                const startY = (img.height - minSize) / 2;
-                ctx.drawImage(img, startX, startY, minSize, minSize, 0, 0, size, size);
+                ctx.drawImage(img, (img.width - minSize) / 2, (img.height - minSize) / 2, minSize, minSize, 0, 0, size, size);
                 setRutinaImages(prev => ({...prev, [grupo]: canvas.toDataURL('image/jpeg', 0.6)}));
             };
             img.src = event.target.result;
@@ -363,20 +497,14 @@ export default function App() {
         });
     };
 
-    const cambiarMesCalendario = (inc) => {
-        setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() + inc, 1));
-    };
-
     const renderCalendario = () => {
         const year = fechaCalendario.getFullYear();
         const month = fechaCalendario.getMonth();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         let firstDay = new Date(year, month, 1).getDay();
         firstDay = firstDay === 0 ? 7 : firstDay;
-
         const dias = [];
         for (let i = 1; i < firstDay; i++) dias.push(<div key={`empty-${i}`} className="p-2"></div>);
-
         const fechaHoyStr = obtenerFechaLocal();
 
         for (let d = 1; d <= daysInMonth; d++) {
@@ -396,9 +524,7 @@ export default function App() {
                 bgClase = darkMode ? 'bg-blue-500/10 border-2 border-transparent' : 'bg-blue-500/20 border-2 border-transparent';
             }
 
-            if (isSelected) {
-                bgClase = bgClase.replace('border-transparent', 'border-blue-500');
-            }
+            if (isSelected) bgClase = bgClase.replace('border-transparent', 'border-blue-500');
 
             dias.push(
                 <button key={d} onClick={() => setFechaSeleccionada(currentStr)} className={`aspect-square flex items-center justify-center rounded-xl text-sm transition-colors outline-none ${colorClase} ${bgClase}`}>
@@ -409,6 +535,40 @@ export default function App() {
         return dias;
     };
 
+    // --- OBTENER DATOS PARA LA GRÁFICA ---
+    const obtenerDatosGrafica = (nombreEj) => {
+        if (!nombreEj) return [];
+        const datosMap = {}; // Guardar solo el RM más alto de cada día
+
+        Object.keys(historial).forEach(fecha => {
+            historial[fecha].forEach(entreno => {
+                entreno.ejercicios.forEach(ej => {
+                    if (ej.nombre === nombreEj) {
+                        let maxRmDia = 0;
+                        ej.series.forEach(s => {
+                            const rm = calcular1RMInteligente(parseFloat(s.peso || 0), parseFloat(s.reps || 0), ej.nombre);
+                            if (rm > maxRmDia) maxRmDia = rm;
+                        });
+                        if (maxRmDia > 0) {
+                            if (!datosMap[fecha] || maxRmDia > datosMap[fecha]) datosMap[fecha] = maxRmDia;
+                        }
+                    }
+                });
+            });
+        });
+
+        // Convertir a array ordenado por fecha
+        return Object.keys(datosMap).sort().map(fecha => ({ fecha, rm: datosMap[fecha] }));
+    };
+
+    // 🛑 Filtramos los ejercicios no básicos para que no salgan en el selector de gráficas
+    const listaEjerciciosHistoricos = [...new Set(Object.values(historial).flatMap(dia => dia.flatMap(e => e.ejercicios.map(ej => ej.nombre))))]
+        .filter(nombre => analizarMusculo(nombre) !== 'desconocido');
+
+    // Calculadora Aislada logic
+    const rmCalcAislada = calcular1RMInteligente(parseFloat(calcPeso || 0), parseFloat(calcReps || 0), calcEj);
+    const rangoCalcAislada = obtenerRango(rmCalcAislada, calcEj);
+
     const mainBg = darkMode ? 'bg-gradient-to-br from-[#05070a] via-[#0a0d14] to-[#020305] text-gray-200' : 'bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0] text-gray-900';
     const textGradient = 'bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500';
 
@@ -416,7 +576,7 @@ export default function App() {
         <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 ${mainBg}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
             <GlobalStyles darkMode={darkMode} />
 
-            {/* --- MODALES VARIOS --- */}
+            {/* --- MODAL CONFIRM --- */}
             {modal.show && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
@@ -433,6 +593,7 @@ export default function App() {
                 </div>
             )}
 
+            {/* --- MODAL LIBRERÍA --- */}
             {mostrarLibreria && (
                 <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
@@ -458,6 +619,7 @@ export default function App() {
                 </div>
             )}
 
+            {/* --- MODAL CREADOR MÚSCULOS --- */}
             {mostrarCreadorRutinas && (
                 <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className={`w-full max-w-md rounded-3xl shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
@@ -494,19 +656,58 @@ export default function App() {
                 </div>
             )}
 
+            {/* --- MODAL GRÁFICAS DE EVOLUCIÓN --- */}
+            {mostrarGraficas && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className={`w-full max-w-md rounded-3xl shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
+                        <div className={`p-5 flex items-center justify-between border-b ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
+                            <h2 className={`text-xl font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>EVOLUCIÓN 1RM</h2>
+                            <button onClick={() => setMostrarGraficas(false)} className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            {listaEjerciciosHistoricos.length === 0 ? (
+                                <p className="text-center text-gray-500 font-bold">Guarda entrenamientos primero para ver tus gráficas.</p>
+                            ) : (
+                                <>
+                                    <select
+                                        value={ejercicioGrafica}
+                                        onChange={(e) => setEjercicioGrafica(e.target.value)}
+                                        className={`w-full p-4 rounded-xl border outline-none font-bold uppercase tracking-tight mb-4 appearance-none ${darkMode ? 'bg-black/30 border-white/10 text-white' : 'bg-gray-100 border-black/5 text-gray-900'}`}
+                                    >
+                                        <option value="" disabled>Selecciona un ejercicio...</option>
+                                        {listaEjerciciosHistoricos.map(ej => <option key={ej} value={ej}>{ej}</option>)}
+                                    </select>
+
+                                    {ejercicioGrafica && (
+                                        <LineChart data={obtenerDatosGrafica(ejercicioGrafica)} darkMode={darkMode} />
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <main className="p-5 max-w-xl mx-auto">
                 {seccion === 'progreso' ? (
                     <div className="pt-6 animate-in fade-in duration-300 pb-10">
-                        <h1 className={`text-4xl font-black italic tracking-tighter mb-8 uppercase ${textGradient}`}>PROGRESO</h1>
+                        <div className="flex items-center justify-between mb-8">
+                            <h1 className={`text-4xl font-black italic tracking-tighter uppercase ${textGradient}`}>PROGRESO</h1>
+                            <button onClick={() => { setMostrarGraficas(true); if(listaEjerciciosHistoricos.length > 0 && !ejercicioGrafica) setEjercicioGrafica(listaEjerciciosHistoricos[0]); }} className={`p-3 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+                            </button>
+                        </div>
 
                         {/* CALENDARIO */}
                         <div className="glass-effect glass-border p-6 rounded-[2rem] mb-8">
                             <div className="flex items-center justify-between mb-6">
-                                <button onClick={() => cambiarMesCalendario(-1)} className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg></button>
+                                <button onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() - 1, 1))} className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg></button>
                                 <h2 className={`text-lg font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                     {MESES[fechaCalendario.getMonth()]} {fechaCalendario.getFullYear()}
                                 </h2>
-                                <button onClick={() => cambiarMesCalendario(1)} className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg></button>
+                                <button onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() + 1, 1))} className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg></button>
                             </div>
                             <div className="grid grid-cols-7 gap-1 mb-2 text-center">
                                 {DIAS_SEMANA.map(d => <span key={d} className="text-[10px] font-black text-gray-500">{d}</span>)}
@@ -536,14 +737,24 @@ export default function App() {
                                                     <div key={ejIdx}>
                                                         <span className={`text-[11px] font-black uppercase tracking-widest opacity-80 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{ej.nombre}</span>
                                                         <div className="mt-2 space-y-1.5 pl-1">
-                                                            {ej.series.map((s, sIdx) => (
-                                                                <div key={sIdx} className={`flex items-center gap-3 text-[12px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${darkMode ? 'bg-white/5 text-gray-500' : 'bg-black/5 text-gray-400'}`}>{sIdx + 1}</span>
-                                                                    <span>{s.peso || '0'} kg</span>
-                                                                    <span className="opacity-50">×</span>
-                                                                    <span>{s.reps || '0'} reps</span>
-                                                                </div>
-                                                            ))}
+                                                            {ej.series.map((s, sIdx) => {
+                                                                // Gamificación en el feed histórico
+                                                                const rmHist = calcular1RMInteligente(parseFloat(s.peso||0), parseFloat(s.reps||0), ej.nombre);
+                                                                const rangoHist = mostrar1RM ? obtenerRango(rmHist, ej.nombre) : null;
+                                                                return (
+                                                                    <div key={sIdx} className={`flex items-center justify-between text-[12px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                                        <div className="flex items-center gap-3">
+                                                                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${darkMode ? 'bg-white/5 text-gray-500' : 'bg-black/5 text-gray-400'}`}>{sIdx + 1}</span>
+                                                                            <span>{s.peso || '0'} kg</span>
+                                                                            <span className="opacity-50">×</span>
+                                                                            <span>{s.reps || '0'} reps</span>
+                                                                        </div>
+                                                                        {rangoHist && (
+                                                                            <span className={`text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wider ${rangoHist.bg} ${rangoHist.color}`}>1RM: {rmHist}kg</span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
                                                 ))}
@@ -556,8 +767,55 @@ export default function App() {
                     </div>
 
                 ) : seccion === 'ajustes' ? (
-                    <div className="pt-6 animate-in fade-in duration-300">
+                    <div className="pt-6 animate-in fade-in duration-300 pb-10">
                         <h1 className={`text-4xl font-black italic tracking-tighter mb-8 uppercase ${textGradient}`}>AJUSTES</h1>
+
+                        {/* --- BOTÓN ACTIVAR/DESACTIVAR GAMIFICACIÓN --- */}
+                        <div className="glass-effect glass-border p-6 rounded-[2rem] mb-6">
+                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">GAMIFICACIÓN Y RANGOS</p>
+                            <button onClick={() => setMostrar1RM(!mostrar1RM)} className={`w-full py-4 rounded-2xl font-black tracking-widest uppercase flex items-center justify-between px-5 transition-colors duration-300 ${mostrar1RM ? 'bg-blue-600/20 text-blue-500 border border-blue-500/30' : (darkMode ? 'bg-white/5 text-gray-500 border border-transparent' : 'bg-black/5 text-gray-400 border border-transparent')}`}>
+                                <span>Cálculo de 1RM</span>
+                                <span className={`text-xs ${mostrar1RM ? 'text-blue-500' : 'text-gray-500'}`}>{mostrar1RM ? 'ACTIVADO' : 'DESACTIVADO'}</span>
+                            </button>
+                        </div>
+
+                        {/* --- NUEVA CALCULADORA 1RM AISLADA --- */}
+                        {mostrar1RM && (
+                            <div className={`glass-effect glass-border p-6 rounded-[2rem] mb-6 relative overflow-hidden ${darkMode ? 'bg-[#0f172a]/40' : 'bg-blue-50/50'}`}>
+                                <div className="absolute top-0 right-0 p-4 opacity-10">
+                                    <svg className="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 12h3v8h14v-8h3L12 2zm0 2.83L17.17 10H6.83L12 4.83z"/></svg>
+                                </div>
+                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 relative z-10">🧮 CALCULADORA 1RM AISLADA</p>
+
+                                <select value={calcEj} onChange={(e) => setCalcEj(e.target.value)} className={`w-full p-3 rounded-xl border outline-none font-bold uppercase tracking-tight mb-3 text-sm appearance-none relative z-10 ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`}>
+                                    {LIBRERIA_EJERCICIOS.map(ej => <option key={ej.nombre} value={ej.nombre}>{ej.nombre}</option>)}
+                                </select>
+
+                                <div className="flex gap-3 mb-4 relative z-10">
+                                    <input type="number" placeholder="Peso (kg)" value={calcPeso} onChange={(e) => setCalcPeso(e.target.value)} className={`w-1/2 p-3 rounded-xl border outline-none font-bold text-center ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`} />
+                                    <input type="number" placeholder="Reps" value={calcReps} onChange={(e) => setCalcReps(e.target.value)} className={`w-1/2 p-3 rounded-xl border outline-none font-bold text-center ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`} />
+                                </div>
+
+                                <div className="flex flex-col items-center justify-center pt-2 relative z-10">
+                                    {analizarMusculo(calcEj) !== 'desconocido' ? (
+                                        <>
+                                            <span className={`text-[10px] font-black uppercase tracking-widest opacity-70 mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Tu Repetición Máxima es</span>
+                                            <div className={`text-4xl font-black tracking-tighter ${darkMode ? 'text-white' : 'text-gray-900'}`}>{rmCalcAislada} <span className="text-xl text-gray-500">KG</span></div>
+                                            {rangoCalcAislada && (
+                                                <div className={`mt-2 px-4 py-1.5 rounded-full ${rangoCalcAislada.bg} ${rangoCalcAislada.color} text-xs font-black uppercase tracking-widest`}>
+                                                    RANGO: {rangoCalcAislada.nombre}
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className={`text-center p-3 rounded-xl border border-dashed w-full ${darkMode ? 'border-gray-700 bg-black/20 text-gray-400' : 'border-gray-300 bg-white/50 text-gray-500'}`}>
+                                            <span className="text-[10px] font-black uppercase tracking-widest block mb-1">EJERCICIO NO BÁSICO</span>
+                                            <span className="text-xs font-semibold">El 1RM no aplica o no está soportado.</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="glass-effect glass-border p-6 rounded-[2rem] mb-6">
                             <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">TIEMPO DE DESCANSO</p>
@@ -660,7 +918,7 @@ export default function App() {
                             <SortableContext items={rutinas[gruposel]} strategy={verticalListSortingStrategy}>
                                 <div className="space-y-2">
                                     {rutinas[gruposel].map(ej => (
-                                        <Ejercicio key={ej.id} ejercicio={ej} onActualizarSerie={(idS, c, v) => actualizarSerie(ej.id, idS, c, v)} onAgregarSerie={() => agregarSerie(ej.id)} onEliminarEjercicio={() => setRutinas(p => ({...p, [gruposel]: p[gruposel].filter(x => x.id !== ej.id)}))} onEditarNombre={editarNombreEjercicio} darkMode={darkMode} showConfirm={showConfirm} />
+                                        <Ejercicio key={ej.id} ejercicio={ej} onActualizarSerie={(idS, c, v) => actualizarSerie(ej.id, idS, c, v)} onAgregarSerie={() => agregarSerie(ej.id)} onEliminarEjercicio={() => setRutinas(p => ({...p, [gruposel]: p[gruposel].filter(x => x.id !== ej.id)}))} onEditarNombre={editarNombreEjercicio} darkMode={darkMode} showConfirm={showConfirm} mostrar1RM={mostrar1RM} />
                                     ))}
                                 </div>
                             </SortableContext>
