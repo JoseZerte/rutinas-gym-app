@@ -64,10 +64,18 @@ const calcular1RMInteligente = (peso, reps, ejercicioNombre) => {
     if (!peso || !reps || reps <= 0) return 0;
 
     let pesoReal = parseFloat(peso);
+    const repsNum = parseInt(reps);
     const categoria = analizarMusculo(ejercicioNombre);
 
-    const epley = pesoReal * (1 + reps / 30);
-    const brzycki = pesoReal * (36 / (37 - reps));
+    // 🛡️ LÍMITE DE SEGURIDAD:
+    // Si las reps son > 15, la fórmula de Brzycki se vuelve inestable.
+    // En esos casos, usamos solo la fórmula de Epley, que es lineal y no "explota".
+    if (repsNum > 15) {
+        return Math.round(pesoReal * (1 + repsNum / 30));
+    }
+
+    const epley = pesoReal * (1 + repsNum / 30);
+    const brzycki = pesoReal * (36 / (37 - repsNum));
     return Math.round((epley + brzycki) / 2);
 };
 
@@ -241,18 +249,20 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
                 <div className="flex flex-col">
                     <span className="text-[9px] uppercase font-black text-gray-500/80 ml-2 mb-1 tracking-widest">Peso</span>
                     <div className="flex gap-2">
-                        <input type="text" value={serie.nuevoPeso ?? ''} onChange={e => onChangePeso(e.target.value)} placeholder={serie.peso || ''} className={`flex-1 min-w-0 ${bgInput} ${textInput} ${borderInput} border rounded-xl px-4 py-3.5 outline-none focus:border-blue-500 transition-all font-semibold text-lg`} />
-                        <button onClick={() => handleStepPeso(-1)} className="w-12 shrink-0 rounded-xl bg-red-500/10 text-red-500 active:bg-red-500/20 font-black text-2xl flex items-center justify-center transition-colors">-</button>
-                        <button onClick={() => handleStepPeso(1)} className="w-12 shrink-0 rounded-xl bg-green-500/10 text-green-500 active:bg-green-500/20 font-black text-2xl flex items-center justify-center transition-colors">+</button>
+                        {/* INPUT: Bajamos el padding de px-4 py-3.5 a px-3 py-3 */}
+                        <input type="text" value={serie.nuevoPeso ?? ''} onChange={e => onChangePeso(e.target.value)} placeholder={serie.peso || ''} className={`flex-1 min-w-0 ${bgInput} ${textInput} ${borderInput} border rounded-xl px-3 py-3 outline-none focus:border-blue-500 transition-all font-semibold text-lg`} />
+                        {/* BOTONES: Bajamos el ancho de w-12 a w-10 y el texto a text-xl */}
+                        <button onClick={() => handleStepPeso(-1)} className="w-9 shrink-0 rounded-xl bg-red-500/10 text-red-500 active:bg-red-500/20 font-black text-xl flex items-center justify-center transition-colors">-</button>
+                        <button onClick={() => handleStepPeso(1)} className="w-9 shrink-0 rounded-xl bg-green-500/10 text-green-500 active:bg-green-500/20 font-black text-xl flex items-center justify-center transition-colors">+</button>
                     </div>
                 </div>
 
                 <div className="flex flex-col">
                     <span className="text-[9px] uppercase font-black text-gray-500/80 ml-2 mb-1 tracking-widest">Repeticiones</span>
                     <div className="flex gap-2">
-                        <input type="text" value={serie.nuevoReps ?? ''} onChange={e => onChangeReps(e.target.value)} placeholder={serie.reps || ''} className={`flex-1 min-w-0 ${bgInput} ${textInput} ${borderInput} border rounded-xl px-4 py-3.5 outline-none focus:border-blue-500 transition-all font-semibold text-lg`} />
-                        <button onClick={() => handleStepReps(-1)} className="w-12 shrink-0 rounded-xl bg-red-500/10 text-red-500 active:bg-red-500/20 font-black text-2xl flex items-center justify-center transition-colors">-</button>
-                        <button onClick={() => handleStepReps(1)} className="w-12 shrink-0 rounded-xl bg-green-500/10 text-green-500 active:bg-green-500/20 font-black text-2xl flex items-center justify-center transition-colors">+</button>
+                        <input type="text" value={serie.nuevoReps ?? ''} onChange={e => onChangeReps(e.target.value)} placeholder={serie.reps || ''} className={`flex-1 min-w-0 ${bgInput} ${textInput} ${borderInput} border rounded-xl px-3 py-3 outline-none focus:border-blue-500 transition-all font-semibold text-lg`} />
+                        <button onClick={() => handleStepReps(-1)} className="w-9 shrink-0 rounded-xl bg-red-500/10 text-red-500 active:bg-red-500/20 font-black text-xl flex items-center justify-center transition-colors">-</button>
+                        <button onClick={() => handleStepReps(1)} className="w-9 shrink-0 rounded-xl bg-green-500/10 text-green-500 active:bg-green-500/20 font-black text-xl flex items-center justify-center transition-colors">+</button>
                     </div>
                 </div>
             </div>
@@ -454,17 +464,41 @@ export default function App() {
         const rutinaActualizada = rutinas[gruposel].map(ej => ({
             ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false }))
         }));
+
         const fechaLocal = obtenerFechaLocal();
+
         setHistorial(prev => {
             const nuevo = { ...prev };
-            nuevo[fechaLocal] = [...(nuevo[fechaLocal] || []), { nombre: gruposel, ejercicios: JSON.parse(JSON.stringify(rutinaActualizada)) }];
+            // Cogemos los entrenos que ya haya hoy (o un array vacío si no hay ninguno)
+            const entrenosHoy = nuevo[fechaLocal] ? [...nuevo[fechaLocal]] : [];
+
+            // Buscamos si HOY ya hemos guardado esta misma rutina (ej: "Pecho - Triceps")
+            const indexExistente = entrenosHoy.findIndex(entreno => entreno.nombre === gruposel);
+
+            const nuevoEntrenoGuardar = {
+                nombre: gruposel,
+                ejercicios: JSON.parse(JSON.stringify(rutinaActualizada))
+            };
+
+            if (indexExistente >= 0) {
+                // Si ya existe, LO ACTUALIZAMOS (machacamos el viejo con los datos nuevos)
+                entrenosHoy[indexExistente] = nuevoEntrenoGuardar;
+            } else {
+                // Si no existe, LO AÑADIMOS al final
+                entrenosHoy.push(nuevoEntrenoGuardar);
+            }
+
+            nuevo[fechaLocal] = entrenosHoy;
             return nuevo;
         });
+
+        // Limpiamos los inputs visuales
         setRutinas(prev => {
             const act = { ...prev };
             for (const g in act) { act[g] = act[g].map(ej => ({ ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false })) })); }
             return act;
         });
+
         setConfirmacionVisible(true);
         setTimeout(() => setConfirmacionVisible(false), 2000);
     };
@@ -782,13 +816,13 @@ export default function App() {
                         {/* --- NUEVA CALCULADORA 1RM AISLADA --- */}
                         {mostrar1RM && (
                             <div className={`glass-effect glass-border p-6 rounded-[2rem] mb-6 relative overflow-hidden ${darkMode ? 'bg-[#0f172a]/40' : 'bg-blue-50/50'}`}>
-                                <div className="absolute top-0 right-0 p-4 opacity-10">
-                                    <svg className="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 12h3v8h14v-8h3L12 2zm0 2.83L17.17 10H6.83L12 4.83z"/></svg>
-                                </div>
+
                                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 relative z-10">🧮 CALCULADORA 1RM AISLADA</p>
 
                                 <select value={calcEj} onChange={(e) => setCalcEj(e.target.value)} className={`w-full p-3 rounded-xl border outline-none font-bold uppercase tracking-tight mb-3 text-sm appearance-none relative z-10 ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`}>
-                                    {LIBRERIA_EJERCICIOS.map(ej => <option key={ej.nombre} value={ej.nombre}>{ej.nombre}</option>)}
+                                    {LIBRERIA_EJERCICIOS.filter(ej => analizarMusculo(ej.nombre) !== 'desconocido').map(ej => (
+                                        <option key={ej.nombre} value={ej.nombre}>{ej.nombre}</option>
+                                    ))}
                                 </select>
 
                                 <div className="flex gap-3 mb-4 relative z-10">
