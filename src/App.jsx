@@ -332,14 +332,24 @@ function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEje
 
 export default function App() {
     const [seccion, setSeccion] = useState('rutinas');
-    const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('gymConfig')) || { descanso: 120 });
-    const [darkMode, setDarkMode] = useState(() => { const saved = localStorage.getItem('gymTheme'); return saved !== null ? JSON.parse(saved) : true; });
-    const [mostrar1RM, setMostrar1RM] = useState(() => { const saved = localStorage.getItem('gymMostrar1RM'); return saved !== null ? JSON.parse(saved) : true; });
+    const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('gymConfig')) || {descanso: 120});
+    const [darkMode, setDarkMode] = useState(() => {
+        const saved = localStorage.getItem('gymTheme');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
+    const [mostrar1RM, setMostrar1RM] = useState(() => {
+        const saved = localStorage.getItem('gymMostrar1RM');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
 
     const [gruposel, setgruposel] = useState(null);
-    const [rutinas, setRutinas] = useState(() => JSON.parse(localStorage.getItem('rutinas')) || { 'Pecho - Triceps': [] });
+    const [rutinas, setRutinas] = useState(() => JSON.parse(localStorage.getItem('rutinas')) || {'Pecho - Triceps': []});
     const [rutinaImages, setRutinaImages] = useState(() => JSON.parse(localStorage.getItem('rutinaImages')) || {});
     const [historial, setHistorial] = useState(() => JSON.parse(localStorage.getItem('gymHistorial')) || {});
+
+    const [ordenRutinas, setOrdenRutinas] = useState(() => {
+        return JSON.parse(localStorage.getItem('gymOrdenRutinas')) || Object.keys(JSON.parse(localStorage.getItem('rutinas')) || {'Pecho - Triceps': []});
+    });
 
     const [nuevoEjercicio, setNuevoEjercicio] = useState('');
     const [nuevoGrupo, setNuevoGrupo] = useState('');
@@ -364,15 +374,36 @@ export default function App() {
     const [fechaSeleccionada, setFechaSeleccionada] = useState(obtenerFechaLocal());
 
     const timerRef = useRef(null);
-    const [modal, setModal] = useState({ show: false, type: '', title: '', message: '', inputValue: '', onConfirm: null });
+    const [modal, setModal] = useState({
+        show: false,
+        type: '',
+        title: '',
+        message: '',
+        inputValue: '',
+        onConfirm: null
+    });
 
-    const showPrompt = (title, defaultValue, onConfirmCallback) => setModal({ show: true, type: 'prompt', title, message: '', inputValue: defaultValue, onConfirm: onConfirmCallback });
-    const showConfirm = (title, message, onConfirmCallback) => setModal({ show: true, type: 'confirm', title, message, inputValue: '', onConfirm: onConfirmCallback });
-    const closeModal = () => setModal({ ...modal, show: false });
+    const showPrompt = (title, defaultValue, onConfirmCallback) => setModal({
+        show: true,
+        type: 'prompt',
+        title,
+        message: '',
+        inputValue: defaultValue,
+        onConfirm: onConfirmCallback
+    });
+    const showConfirm = (title, message, onConfirmCallback) => setModal({
+        show: true,
+        type: 'confirm',
+        title,
+        message,
+        inputValue: '',
+        onConfirm: onConfirmCallback
+    });
+    const closeModal = () => setModal({...modal, show: false});
 
     const touchStart = useRef(null);
     const touchEnd = useRef(null);
-    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+    const sensors = useSensors(useSensor(PointerSensor, {activationConstraint: {distance: 5}}));
 
     const [sessionUser, setSessionUser] = useState(null);
     const [cargandoNube, setCargandoNube] = useState(false);
@@ -381,33 +412,71 @@ export default function App() {
     const [authError, setAuthError] = useState('');
     const [modoRegistro, setModoRegistro] = useState(false);
 
-    useEffect(() => { localStorage.setItem('rutinas', JSON.stringify(rutinas)); }, [rutinas]);
-    useEffect(() => { localStorage.setItem('gymConfig', JSON.stringify(config)); }, [config]);
-    useEffect(() => { localStorage.setItem('gymTheme', JSON.stringify(darkMode)); }, [darkMode]);
-    useEffect(() => { localStorage.setItem('gymMostrar1RM', JSON.stringify(mostrar1RM)); }, [mostrar1RM]);
-    useEffect(() => { localStorage.setItem('rutinaImages', JSON.stringify(rutinaImages)); }, [rutinaImages]);
-    useEffect(() => { localStorage.setItem('gymHistorial', JSON.stringify(historial)); }, [historial]);
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        localStorage.setItem('rutinas', JSON.stringify(rutinas));
+    }, [rutinas]);
+    useEffect(() => {
+        localStorage.setItem('gymConfig', JSON.stringify(config));
+    }, [config]);
+    useEffect(() => {
+        localStorage.setItem('gymTheme', JSON.stringify(darkMode));
+    }, [darkMode]);
+    useEffect(() => {
+        localStorage.setItem('gymMostrar1RM', JSON.stringify(mostrar1RM));
+    }, [mostrar1RM]);
+    useEffect(() => {
+        localStorage.setItem('rutinaImages', JSON.stringify(rutinaImages));
+    }, [rutinaImages]);
+    useEffect(() => {
+        localStorage.setItem('gymHistorial', JSON.stringify(historial));
+    }, [historial]);
+
+    useEffect(() => {
+        localStorage.setItem('gymOrdenRutinas', JSON.stringify(ordenRutinas));
+    }, [ordenRutinas]);
+
+    // 🌟 CONTROLADOR PARA EL ARRASTRE DE RUTINAS
+    const handleDragEndRutinas = (event) => {
+        const {active, over} = event;
+        if (!over || active.id === over.id) return;
+
+        setOrdenRutinas((items) => {
+            const oldIndex = items.indexOf(active.id);
+            const newIndex = items.indexOf(over.id);
+            const nuevoOrden = arrayMove(items, oldIndex, newIndex);
+
+            // Sincroniza rápido con Supabase para guardar el nuevo orden
+            setTimeout(() => respaldarEnNube(), 500);
+            return nuevoOrden;
+        });
+    };
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({data: {session}}) => {
             if (session) {
                 setSessionUser(session.user);
                 descargarDatosDeNube(session.user.id);
             }
         });
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const {data: {subscription}} = supabase.auth.onAuthStateChange((_event, session) => {
             if (session) {
                 setSessionUser(session.user);
                 descargarDatosDeNube(session.user.id);
-            } else { setSessionUser(null); }
+            } else {
+                setSessionUser(null);
+            }
         });
         return () => subscription.unsubscribe();
     }, []);
 
     const descargarDatosDeNube = async (userId) => {
+
+        if (localStorage.getItem('nube_descargada') === 'true') return;
+
         setCargandoNube(true);
         try {
-            const { data, error } = await supabase.from('perfiles_gym').select('*').eq('id', userId).single();
+            const {data, error} = await supabase.from('perfiles_gym').select('*').eq('id', userId).single();
             if (error && error.code !== 'PGRST116') throw error;
             if (data) {
                 // Si la nube tiene datos nuevos, actualiza tus estados (y tus efectos automáticos los guardarán en localStorage)
@@ -415,13 +484,24 @@ export default function App() {
                 if (data.rutina_images) setRutinaImages(data.rutina_images);
                 if (data.historial) setHistorial(data.historial);
                 if (data.config) setConfig(data.config);
+                if (data.orden_rutinas) setOrdenRutinas(data.orden_rutinas);
+
+                localStorage.setItem('nube_descargada', 'true');
+
             } else {
                 // Si la nube está vacía (primer registro), lee lo tuyo local y haz el primer respaldo
                 await supabase.from('perfiles_gym').upsert({
                     id: userId, rutinas, historial, config, rutina_images: rutinaImages, updated_at: new Date()
                 });
+
+                localStorage.setItem('nube_descargada', 'true');
+
             }
-        } catch (err) { console.error(err.message); } finally { setCargandoNube(false); }
+        } catch (err) {
+            console.error(err.message);
+        } finally {
+            setCargandoNube(false);
+        }
     };
 
     const respaldarEnNube = async (nuevasRutinas = null, nuevoHistorial = null) => {
@@ -434,13 +514,21 @@ export default function App() {
                 historial: nuevoHistorial || historial,
                 config: config,
                 rutina_images: rutinaImages,
+                orden_rutinas: ordenRutinas,
                 updated_at: new Date()
             });
-        } catch (err) { console.error("Error backup:", err.message); }
+        } catch (err) {
+            console.error("Error backup:", err.message);
+        }
     };
 
-    const onTouchStart = (e) => { touchEnd.current = null; touchStart.current = e.targetTouches[0].clientX; }
-    const onTouchMove = (e) => { touchEnd.current = e.targetTouches[0].clientX; }
+    const onTouchStart = (e) => {
+        touchEnd.current = null;
+        touchStart.current = e.targetTouches[0].clientX;
+    }
+    const onTouchMove = (e) => {
+        touchEnd.current = e.targetTouches[0].clientX;
+    }
     const onTouchEnd = () => {
         if (!touchStart.current || !touchEnd.current) return;
         if (touchStart.current - touchEnd.current < -100 && gruposel !== null && !mostrarLibreria && !mostrarCreadorRutinas && !mostrarGraficas) setgruposel(null);
@@ -460,10 +548,12 @@ export default function App() {
                 setTiempo(0);
                 if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
                 if ('Notification' in window && Notification.permission === 'granted') {
-                    new Notification("⏱️ ¡Descanso terminado!", { body: "A por la siguiente serie. ¡Duro!" });
+                    new Notification("⏱️ ¡Descanso terminado!", {body: "A por la siguiente serie. ¡Duro!"});
                 }
                 setTimeout(() => setTimerActivo(false), 2000);
-            } else { setTiempo(restante); }
+            } else {
+                setTiempo(restante);
+            }
         }, 1000);
     };
 
@@ -471,10 +561,27 @@ export default function App() {
         showPrompt("Editar Rutina", nombreViejo, (nuevoNombre) => {
             const nombreFinal = nuevoNombre.trim();
             if (!nombreFinal || nombreFinal === nombreViejo) return;
-            if (rutinas[nombreFinal]) { alert("Ese nombre ya existe."); return; }
-            setRutinas(prev => { const copia = { ...prev }; copia[nombreFinal] = copia[nombreViejo]; delete copia[nombreViejo]; return copia; });
-            setRutinaImages(prev => { const copia = { ...prev }; if (copia[nombreViejo]) { copia[nombreFinal] = copia[nombreViejo]; delete copia[nombreViejo]; } return copia; });
+            if (rutinas[nombreFinal]) {
+                alert("Ese nombre ya existe.");
+                return;
+            }
+            setRutinas(prev => {
+                const copia = {...prev};
+                copia[nombreFinal] = copia[nombreViejo];
+                delete copia[nombreViejo];
+                return copia;
+            });
+            setRutinaImages(prev => {
+                const copia = {...prev};
+                if (copia[nombreViejo]) {
+                    copia[nombreFinal] = copia[nombreViejo];
+                    delete copia[nombreViejo];
+                }
+                return copia;
+            });
             if (gruposel === nombreViejo) setgruposel(nombreFinal);
+
+            setOrdenRutinas(prev => prev.map(item => item === nombreViejo ? nombreFinal : item));
         });
     };
 
@@ -486,22 +593,30 @@ export default function App() {
                 const copiaGrupo = [...prev[gruposel]];
                 const idxEj = copiaGrupo.findIndex(e => e.id === idEj);
                 if (idxEj === -1) return prev;
-                copiaGrupo[idxEj] = { ...copiaGrupo[idxEj], nombre: finalNombre };
-                return { ...prev, [gruposel]: copiaGrupo };
+                copiaGrupo[idxEj] = {...copiaGrupo[idxEj], nombre: finalNombre};
+                return {...prev, [gruposel]: copiaGrupo};
             });
         });
     };
 
     const agregarEjercicio = () => {
         if (!nuevoEjercicio.trim()) return;
-        const ejercicio = { id: Date.now(), nombre: nuevoEjercicio, series: [{ id: Date.now() + 1, peso: '', reps: '', nuevoPeso: '', nuevoReps: '', completada: false }] };
-        setRutinas(prev => ({ ...prev, [gruposel]: [...(prev[gruposel] || []), ejercicio] }));
+        const ejercicio = {
+            id: Date.now(),
+            nombre: nuevoEjercicio,
+            series: [{id: Date.now() + 1, peso: '', reps: '', nuevoPeso: '', nuevoReps: '', completada: false}]
+        };
+        setRutinas(prev => ({...prev, [gruposel]: [...(prev[gruposel] || []), ejercicio]}));
         setNuevoEjercicio('');
     };
 
     const agregarEjercicioLibreria = (nombre) => {
-        const ejercicio = { id: Date.now(), nombre: nombre, series: [{ id: Date.now() + 1, peso: '', reps: '', nuevoPeso: '', nuevoReps: '', completada: false }] };
-        setRutinas(prev => ({ ...prev, [gruposel]: [...(prev[gruposel] || []), ejercicio] }));
+        const ejercicio = {
+            id: Date.now(),
+            nombre: nombre,
+            series: [{id: Date.now() + 1, peso: '', reps: '', nuevoPeso: '', nuevoReps: '', completada: false}]
+        };
+        setRutinas(prev => ({...prev, [gruposel]: [...(prev[gruposel] || []), ejercicio]}));
         setMostrarLibreria(false);
     };
 
@@ -511,11 +626,11 @@ export default function App() {
             const copiaGrupo = [...prev[gruposel]];
             const idxEj = copiaGrupo.findIndex(e => e.id === idEj);
             if (idxEj === -1) return prev;
-            const copiaEj = { ...copiaGrupo[idxEj] };
+            const copiaEj = {...copiaGrupo[idxEj]};
             if (campo === 'eliminar') copiaEj.series = copiaEj.series.filter(s => s.id !== idS);
-            else copiaEj.series = copiaEj.series.map(s => s.id === idS ? { ...s, [campo]: valor } : s);
+            else copiaEj.series = copiaEj.series.map(s => s.id === idS ? {...s, [campo]: valor} : s);
             copiaGrupo[idxEj] = copiaEj;
-            return { ...prev, [gruposel]: copiaGrupo };
+            return {...prev, [gruposel]: copiaGrupo};
         });
     };
 
@@ -524,22 +639,37 @@ export default function App() {
             const copiaGrupo = [...prev[gruposel]];
             const idxEj = copiaGrupo.findIndex(e => e.id === idEj);
             if (idxEj === -1) return prev;
-            const copiaEj = { ...copiaGrupo[idxEj] };
-            copiaEj.series = [...copiaEj.series, { id: Date.now(), peso: '', reps: '', nuevoPeso: '', nuevoReps: '', completada: false }];
+            const copiaEj = {...copiaGrupo[idxEj]};
+            copiaEj.series = [...copiaEj.series, {
+                id: Date.now(),
+                peso: '',
+                reps: '',
+                nuevoPeso: '',
+                nuevoReps: '',
+                completada: false
+            }];
             copiaGrupo[idxEj] = copiaEj;
-            return { ...prev, [gruposel]: copiaGrupo };
+            return {...prev, [gruposel]: copiaGrupo};
         });
     };
 
     const confirmarRutina = () => {
         const rutinaActualizada = rutinas[gruposel].map(ej => ({
-            ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false }))
+            ...ej,
+            series: ej.series.map(s => ({
+                ...s,
+                peso: s.nuevoPeso || s.peso,
+                reps: s.nuevoReps || s.reps,
+                nuevoPeso: '',
+                nuevoReps: '',
+                completada: false
+            }))
         }));
 
         const fechaLocal = obtenerFechaLocal();
 
         setHistorial(prev => {
-            const nuevo = { ...prev };
+            const nuevo = {...prev};
             // Cogemos los entrenos que ya haya hoy (o un array vacío si no hay ninguno)
             const entrenosHoy = nuevo[fechaLocal] ? [...nuevo[fechaLocal]] : [];
 
@@ -565,8 +695,20 @@ export default function App() {
 
         // Limpiamos los inputs visuales
         setRutinas(prev => {
-            const act = { ...prev };
-            for (const g in act) { act[g] = act[g].map(ej => ({ ...ej, series: ej.series.map(s => ({ ...s, peso: s.nuevoPeso || s.peso, reps: s.nuevoReps || s.reps, nuevoPeso: '', nuevoReps: '', completada: false })) })); }
+            const act = {...prev};
+            for (const g in act) {
+                act[g] = act[g].map(ej => ({
+                    ...ej,
+                    series: ej.series.map(s => ({
+                        ...s,
+                        peso: s.nuevoPeso || s.peso,
+                        reps: s.nuevoReps || s.reps,
+                        nuevoPeso: '',
+                        nuevoReps: '',
+                        completada: false
+                    }))
+                }));
+            }
             return act;
         });
 
@@ -599,8 +741,18 @@ export default function App() {
 
     const borrarRutinaYFoto = (grupo) => {
         showConfirm("Eliminar Rutina", `¿Borrar toda la rutina de "${grupo}"?`, () => {
-            setRutinas(prev => { const c = {...prev}; delete c[grupo]; return c; });
-            setRutinaImages(prev => { const c = {...prev}; delete c[grupo]; return c; });
+            setRutinas(prev => {
+                const c = {...prev};
+                delete c[grupo];
+                return c;
+            });
+            setRutinaImages(prev => {
+                const c = {...prev};
+                delete c[grupo];
+                return c;
+            });
+
+            setOrdenRutinas(prev => prev.filter(item => item !== grupo));
         });
     };
 
@@ -634,7 +786,8 @@ export default function App() {
             if (isSelected) bgClase = bgClase.replace('border-transparent', 'border-blue-500');
 
             dias.push(
-                <button key={d} onClick={() => setFechaSeleccionada(currentStr)} className={`aspect-square flex items-center justify-center rounded-xl text-sm transition-colors outline-none ${colorClase} ${bgClase}`}>
+                <button key={d} onClick={() => setFechaSeleccionada(currentStr)}
+                        className={`aspect-square flex items-center justify-center rounded-xl text-sm transition-colors outline-none ${colorClase} ${bgClase}`}>
                     {d}
                 </button>
             );
@@ -665,7 +818,7 @@ export default function App() {
         });
 
         // Convertir a array ordenado por fecha
-        return Object.keys(datosMap).sort().map(fecha => ({ fecha, rm: datosMap[fecha] }));
+        return Object.keys(datosMap).sort().map(fecha => ({fecha, rm: datosMap[fecha]}));
     };
 
     // 🛑 Filtramos los ejercicios no básicos para que no salgan en el selector de gráficas
@@ -680,21 +833,36 @@ export default function App() {
     const textGradient = 'bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500';
 
     return (
-        <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 ${mainBg}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-            <GlobalStyles darkMode={darkMode} />
+        <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 ${mainBg}`}
+             onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+            <GlobalStyles darkMode={darkMode}/>
+
 
             {/* --- MODAL CONFIRM --- */}
             {modal.show && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
+                <div
+                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div
+                        className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
                         <h3 className={`text-xl font-black uppercase tracking-tight mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{modal.title}</h3>
-                        {modal.type === 'confirm' && <p className="text-gray-500 font-medium mb-6 text-sm">{modal.message}</p>}
+                        {modal.type === 'confirm' &&
+                            <p className="text-gray-500 font-medium mb-6 text-sm">{modal.message}</p>}
                         {modal.type === 'prompt' && (
-                            <input type="text" value={modal.inputValue} onChange={(e) => setModal({...modal, inputValue: e.target.value})} className={`w-full border rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-colors font-semibold text-lg mb-6 ${darkMode ? 'bg-black/30 text-gray-100 border-white/5' : 'bg-gray-100/50 text-gray-900 border-black/5'}`} autoFocus />
+                            <input type="text" value={modal.inputValue}
+                                   onChange={(e) => setModal({...modal, inputValue: e.target.value})}
+                                   className={`w-full border rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-colors font-semibold text-lg mb-6 ${darkMode ? 'bg-black/30 text-gray-100 border-white/5' : 'bg-gray-100/50 text-gray-900 border-black/5'}`}
+                                   autoFocus/>
                         )}
                         <div className="flex gap-3">
-                            <button onClick={closeModal} className={`flex-1 py-3 rounded-xl font-bold uppercase tracking-widest text-xs ${darkMode ? 'bg-gray-800 text-gray-300 active:bg-gray-700' : 'bg-gray-200 text-gray-700 active:bg-gray-300'}`}>Cancelar</button>
-                            <button onClick={() => { modal.onConfirm(modal.inputValue); closeModal(); }} className="flex-1 py-3 rounded-xl font-bold uppercase tracking-widest text-xs bg-blue-600 text-white active:bg-blue-700">Aceptar</button>
+                            <button onClick={closeModal}
+                                    className={`flex-1 py-3 rounded-xl font-bold uppercase tracking-widest text-xs ${darkMode ? 'bg-gray-800 text-gray-300 active:bg-gray-700' : 'bg-gray-200 text-gray-700 active:bg-gray-300'}`}>Cancelar
+                            </button>
+                            <button onClick={() => {
+                                modal.onConfirm(modal.inputValue);
+                                closeModal();
+                            }}
+                                    className="flex-1 py-3 rounded-xl font-bold uppercase tracking-widest text-xs bg-blue-600 text-white active:bg-blue-700">Aceptar
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -702,22 +870,33 @@ export default function App() {
 
             {/* --- MODAL LIBRERÍA --- */}
             {mostrarLibreria && (
-                <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
-                        <div className={`p-5 flex items-center justify-between border-b shrink-0 ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
+                <div
+                    className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div
+                        className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
+                        <div
+                            className={`p-5 flex items-center justify-between border-b shrink-0 ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
                             <h2 className={`text-xl font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>LIBRERÍA</h2>
-                            <button onClick={() => setMostrarLibreria(false)} className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            <button onClick={() => setMostrarLibreria(false)}
+                                    className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
                             </button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-5">
                             <div className="grid grid-cols-2 gap-x-4 gap-y-6">
                                 {LIBRERIA_EJERCICIOS.map((ej, index) => (
-                                    <button key={index} onClick={() => agregarEjercicioLibreria(ej.nombre)} className="flex flex-col items-center gap-3 active:scale-95 transition-transform outline-none group">
-                                        <div className={`w-full aspect-square rounded-2xl overflow-hidden border ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-50'}`}>
-                                            <img src={ej.imagen} alt={ej.nombre} className="w-full h-full object-cover opacity-90 group-active:opacity-70 transition-opacity" />
+                                    <button key={index} onClick={() => agregarEjercicioLibreria(ej.nombre)}
+                                            className="flex flex-col items-center gap-3 active:scale-95 transition-transform outline-none group">
+                                        <div
+                                            className={`w-full aspect-square rounded-2xl overflow-hidden border ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-50'}`}>
+                                            <img src={ej.imagen} alt={ej.nombre}
+                                                 className="w-full h-full object-cover opacity-90 group-active:opacity-70 transition-opacity"/>
                                         </div>
-                                        <span className={`text-[11px] font-black uppercase tracking-tight text-center px-1 leading-tight ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{ej.nombre}</span>
+                                        <span
+                                            className={`text-[11px] font-black uppercase tracking-tight text-center px-1 leading-tight ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{ej.nombre}</span>
                                     </button>
                                 ))}
                             </div>
@@ -728,12 +907,19 @@ export default function App() {
 
             {/* --- MODAL CREADOR MÚSCULOS --- */}
             {mostrarCreadorRutinas && (
-                <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className={`w-full max-w-md rounded-3xl shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
-                        <div className={`p-5 flex items-center justify-between border-b ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
+                <div
+                    className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div
+                        className={`w-full max-w-md rounded-3xl shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
+                        <div
+                            className={`p-5 flex items-center justify-between border-b ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
                             <h2 className={`text-xl font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>MÚSCULOS</h2>
-                            <button onClick={() => setMostrarCreadorRutinas(false)} className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            <button onClick={() => setMostrarCreadorRutinas(false)}
+                                    className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
                             </button>
                         </div>
                         <div className="p-6">
@@ -741,7 +927,9 @@ export default function App() {
                                 {LISTA_MUSCULOS.map(musculo => {
                                     const isSelected = musculosSeleccionados.includes(musculo);
                                     return (
-                                        <button key={musculo} onClick={() => setMusculosSeleccionados(prev => isSelected ? prev.filter(m => m !== musculo) : [...prev, musculo])} className={`px-4 py-3 rounded-xl font-bold tracking-wide transition-colors outline-none ${isSelected ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : darkMode ? 'bg-white/5 text-gray-300 active:bg-white/10' : 'bg-black/5 text-gray-700 active:bg-black/10'}`}>
+                                        <button key={musculo}
+                                                onClick={() => setMusculosSeleccionados(prev => isSelected ? prev.filter(m => m !== musculo) : [...prev, musculo])}
+                                                className={`px-4 py-3 rounded-xl font-bold tracking-wide transition-colors outline-none ${isSelected ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : darkMode ? 'bg-white/5 text-gray-300 active:bg-white/10' : 'bg-black/5 text-gray-700 active:bg-black/10'}`}>
                                             {musculo}
                                         </button>
                                     )
@@ -750,7 +938,10 @@ export default function App() {
                             <button onClick={() => {
                                 if (musculosSeleccionados.length === 0) return;
                                 const nombreFinal = musculosSeleccionados.join(' - ');
-                                if (rutinas[nombreFinal]) { alert("Ya existe una rutina con estos músculos."); return; }
+                                if (rutinas[nombreFinal]) {
+                                    alert("Ya existe una rutina con estos músculos.");
+                                    return;
+                                }
                                 setRutinas(prev => ({...prev, [nombreFinal]: []}));
                                 setMostrarCreadorRutinas(false);
                             }}
@@ -765,17 +956,26 @@ export default function App() {
 
             {/* --- MODAL GRÁFICAS DE EVOLUCIÓN --- */}
             {mostrarGraficas && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className={`w-full max-w-md rounded-3xl shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
-                        <div className={`p-5 flex items-center justify-between border-b ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
-                            <h2 className={`text-xl font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>EVOLUCIÓN 1RM</h2>
-                            <button onClick={() => setMostrarGraficas(false)} className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                <div
+                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div
+                        className={`w-full max-w-md rounded-3xl shadow-2xl flex flex-col overflow-hidden ${darkMode ? 'bg-[#111318] border border-gray-800' : 'bg-white border border-gray-200'}`}>
+                        <div
+                            className={`p-5 flex items-center justify-between border-b ${darkMode ? 'border-white/10' : 'border-black/5'}`}>
+                            <h2 className={`text-xl font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>EVOLUCIÓN
+                                1RM</h2>
+                            <button onClick={() => setMostrarGraficas(false)}
+                                    className={`p-2 rounded-full outline-none active:scale-90 transition-transform ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
                             </button>
                         </div>
                         <div className="p-6">
                             {listaEjerciciosHistoricos.length === 0 ? (
-                                <p className="text-center text-gray-500 font-bold">Guarda entrenamientos primero para ver tus gráficas.</p>
+                                <p className="text-center text-gray-500 font-bold">Guarda entrenamientos primero para
+                                    ver tus gráficas.</p>
                             ) : (
                                 <>
                                     <select
@@ -788,7 +988,7 @@ export default function App() {
                                     </select>
 
                                     {ejercicioGrafica && (
-                                        <LineChart data={obtenerDatosGrafica(ejercicioGrafica)} darkMode={darkMode} />
+                                        <LineChart data={obtenerDatosGrafica(ejercicioGrafica)} darkMode={darkMode}/>
                                     )}
                                 </>
                             )}
@@ -802,22 +1002,44 @@ export default function App() {
                     <div className="pt-6 animate-in fade-in duration-300 pb-10">
                         <div className="flex items-center justify-between mb-8">
                             <h1 className={`text-4xl font-black italic tracking-tighter uppercase ${textGradient}`}>PROGRESO</h1>
-                            <button onClick={() => { setMostrarGraficas(true); if(listaEjerciciosHistoricos.length > 0 && !ejercicioGrafica) setEjercicioGrafica(listaEjerciciosHistoricos[0]); }} className={`p-3 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+                            <button onClick={() => {
+                                setMostrarGraficas(true);
+                                if (listaEjerciciosHistoricos.length > 0 && !ejercicioGrafica) setEjercicioGrafica(listaEjerciciosHistoricos[0]);
+                            }}
+                                    className={`p-3 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${darkMode ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                                </svg>
                             </button>
                         </div>
 
                         {/* CALENDARIO */}
                         <div className="glass-effect glass-border p-6 rounded-[2rem] mb-8">
                             <div className="flex items-center justify-between mb-6">
-                                <button onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() - 1, 1))} className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg></button>
+                                <button
+                                    onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() - 1, 1))}
+                                    className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}>
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                              d="M15 19l-7-7 7-7"/>
+                                    </svg>
+                                </button>
                                 <h2 className={`text-lg font-black uppercase tracking-widest ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                     {MESES[fechaCalendario.getMonth()]} {fechaCalendario.getFullYear()}
                                 </h2>
-                                <button onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() + 1, 1))} className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg></button>
+                                <button
+                                    onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() + 1, 1))}
+                                    className={`p-2 rounded-xl outline-none active:bg-black/10 ${darkMode ? 'text-white active:bg-white/10' : 'text-gray-800'}`}>
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                              d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                </button>
                             </div>
                             <div className="grid grid-cols-7 gap-1 mb-2 text-center">
-                                {DIAS_SEMANA.map(d => <span key={d} className="text-[10px] font-black text-gray-500">{d}</span>)}
+                                {DIAS_SEMANA.map(d => <span key={d}
+                                                            className="text-[10px] font-black text-gray-500">{d}</span>)}
                             </div>
                             <div className="grid grid-cols-7 gap-y-2 gap-x-1">
                                 {renderCalendario()}
@@ -831,7 +1053,8 @@ export default function App() {
                             </h3>
 
                             {(!historial[fechaSeleccionada] || historial[fechaSeleccionada].length === 0) ? (
-                                <div className={`p-8 rounded-[2rem] border border-dashed text-center ${darkMode ? 'border-gray-800 text-gray-600' : 'border-gray-300 text-gray-400'}`}>
+                                <div
+                                    className={`p-8 rounded-[2rem] border border-dashed text-center ${darkMode ? 'border-gray-800 text-gray-600' : 'border-gray-300 text-gray-400'}`}>
                                     <p className="font-bold text-sm">Día de descanso. 🔋</p>
                                 </div>
                             ) : (
@@ -842,22 +1065,26 @@ export default function App() {
                                             <div className="space-y-5">
                                                 {entreno.ejercicios.map((ej, ejIdx) => (
                                                     <div key={ejIdx}>
-                                                        <span className={`text-[11px] font-black uppercase tracking-widest opacity-80 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{ej.nombre}</span>
+                                                        <span
+                                                            className={`text-[11px] font-black uppercase tracking-widest opacity-80 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{ej.nombre}</span>
                                                         <div className="mt-2 space-y-1.5 pl-1">
                                                             {ej.series.map((s, sIdx) => {
                                                                 // Gamificación en el feed histórico
-                                                                const rmHist = calcular1RMInteligente(parseFloat(s.peso||0), parseFloat(s.reps||0), ej.nombre);
+                                                                const rmHist = calcular1RMInteligente(parseFloat(s.peso || 0), parseFloat(s.reps || 0), ej.nombre);
                                                                 const rangoHist = mostrar1RM ? obtenerRango(rmHist, ej.nombre) : null;
                                                                 return (
-                                                                    <div key={sIdx} className={`flex items-center justify-between text-[12px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                                    <div key={sIdx}
+                                                                         className={`flex items-center justify-between text-[12px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                                         <div className="flex items-center gap-3">
-                                                                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${darkMode ? 'bg-white/5 text-gray-500' : 'bg-black/5 text-gray-400'}`}>{sIdx + 1}</span>
+                                                                            <span
+                                                                                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${darkMode ? 'bg-white/5 text-gray-500' : 'bg-black/5 text-gray-400'}`}>{sIdx + 1}</span>
                                                                             <span>{s.peso || '0'} kg</span>
                                                                             <span className="opacity-50">×</span>
                                                                             <span>{s.reps || '0'} reps</span>
                                                                         </div>
                                                                         {rangoHist && (
-                                                                            <span className={`text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wider ${rangoHist.bg} ${rangoHist.color}`}>1RM: {rmHist}kg</span>
+                                                                            <span
+                                                                                className={`text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wider ${rangoHist.bg} ${rangoHist.color}`}>1RM: {rmHist}kg</span>
                                                                         )}
                                                                     </div>
                                                                 );
@@ -880,20 +1107,25 @@ export default function App() {
                         {/* --- PANEL DE SINCRONIZACIÓN SUPABASE CLOUD --- */}
                         <div className={`p-6 rounded-[2rem] mb-6 glass-effect glass-border`}>
                             <h3 className={`font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5 5 0 00-4.591-2.941A1.39 1.39 0 0011 7.5V11m0 0v3m0-3h3m-3 0H9" />
+                                <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor"
+                                     viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5 5 0 00-4.591-2.941A1.39 1.39 0 0011 7.5V11m0 0v3m0-3h3m-3 0H9"/>
                                 </svg>
                                 Sincronización en la Nube
                             </h3>
 
                             {cargandoNube ? (
-                                <div className="py-4 text-center text-xs font-black text-emerald-500 uppercase tracking-widest animate-pulse">
+                                <div
+                                    className="py-4 text-center text-xs font-black text-emerald-500 uppercase tracking-widest animate-pulse">
                                     Estableciendo conexión con el búnker...
                                 </div>
                             ) : sessionUser ? (
                                 <div className="space-y-3">
-                                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
-                                        <p className="text-emerald-500 text-[11px] font-black uppercase tracking-wider">Historial Sincronizado y Seguro</p>
+                                    <div
+                                        className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
+                                        <p className="text-emerald-500 text-[11px] font-black uppercase tracking-wider">Historial
+                                            Sincronizado y Seguro</p>
                                         <p className="text-gray-400 text-xs truncate font-semibold mt-0.5">{sessionUser.email}</p>
                                     </div>
                                     <div className="flex gap-2">
@@ -904,7 +1136,11 @@ export default function App() {
                                             Forzar Backup
                                         </button>
                                         <button
-                                            onClick={async () => { await supabase.auth.signOut(); localStorage.clear(); window.location.reload(); }}
+                                            onClick={async () => {
+                                                await supabase.auth.signOut();
+                                                localStorage.clear();
+                                                window.location.reload();
+                                            }}
                                             className="py-3 px-4 bg-red-500/10 text-red-500 border border-red-500/20 active:bg-red-600 text-[11px] font-black uppercase tracking-widest rounded-xl transition-colors"
                                         >
                                             Salir
@@ -917,7 +1153,8 @@ export default function App() {
                                         Crea una cuenta para blindar tus rutinas e historial.
                                     </p>
 
-                                    {authError && <p className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-500/10 p-2.5 rounded-xl text-center">{authError}</p>}
+                                    {authError &&
+                                        <p className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-500/10 p-2.5 rounded-xl text-center">{authError}</p>}
 
                                     <div className="space-y-2">
                                         <input
@@ -942,11 +1179,17 @@ export default function App() {
                                             if (!authEmail || !authPassword) return setAuthError('RELLENA TODOS LOS CAMPOS');
                                             try {
                                                 if (modoRegistro) {
-                                                    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+                                                    const {error} = await supabase.auth.signUp({
+                                                        email: authEmail,
+                                                        password: authPassword
+                                                    });
                                                     if (error) throw error;
                                                     alert("¡Cuenta creada! Revisa tu email para confirmarla.");
                                                 } else {
-                                                    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+                                                    const {error} = await supabase.auth.signInWithPassword({
+                                                        email: authEmail,
+                                                        password: authPassword
+                                                    });
                                                     if (error) throw error;
                                                 }
                                             } catch (err) {
@@ -971,44 +1214,60 @@ export default function App() {
 
                         {/* --- BOTÓN ACTIVAR/DESACTIVAR GAMIFICACIÓN --- */}
                         <div className="glass-effect glass-border p-6 rounded-[2rem] mb-6">
-                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">GAMIFICACIÓN Y RANGOS</p>
-                            <button onClick={() => setMostrar1RM(!mostrar1RM)} className={`w-full py-4 rounded-2xl font-black tracking-widest uppercase flex items-center justify-between px-5 transition-colors duration-300 ${mostrar1RM ? 'bg-blue-600/20 text-blue-500 border border-blue-500/30' : (darkMode ? 'bg-white/5 text-gray-500 border border-transparent' : 'bg-black/5 text-gray-400 border border-transparent')}`}>
+                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">GAMIFICACIÓN
+                                Y RANGOS</p>
+                            <button onClick={() => setMostrar1RM(!mostrar1RM)}
+                                    className={`w-full py-4 rounded-2xl font-black tracking-widest uppercase flex items-center justify-between px-5 transition-colors duration-300 ${mostrar1RM ? 'bg-blue-600/20 text-blue-500 border border-blue-500/30' : (darkMode ? 'bg-white/5 text-gray-500 border border-transparent' : 'bg-black/5 text-gray-400 border border-transparent')}`}>
                                 <span>Cálculo de 1RM</span>
-                                <span className={`text-xs ${mostrar1RM ? 'text-blue-500' : 'text-gray-500'}`}>{mostrar1RM ? 'ACTIVADO' : 'DESACTIVADO'}</span>
+                                <span
+                                    className={`text-xs ${mostrar1RM ? 'text-blue-500' : 'text-gray-500'}`}>{mostrar1RM ? 'ACTIVADO' : 'DESACTIVADO'}</span>
                             </button>
                         </div>
 
                         {/* --- NUEVA CALCULADORA 1RM AISLADA --- */}
                         {mostrar1RM && (
-                            <div className={`glass-effect glass-border p-6 rounded-[2rem] mb-6 relative overflow-hidden ${darkMode ? 'bg-[#0f172a]/40' : 'bg-blue-50/50'}`}>
+                            <div
+                                className={`glass-effect glass-border p-6 rounded-[2rem] mb-6 relative overflow-hidden ${darkMode ? 'bg-[#0f172a]/40' : 'bg-blue-50/50'}`}>
 
-                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 relative z-10">🧮 CALCULADORA 1RM AISLADA</p>
+                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 relative z-10">🧮
+                                    CALCULADORA 1RM AISLADA</p>
 
-                                <select value={calcEj} onChange={(e) => setCalcEj(e.target.value)} className={`w-full p-3 rounded-xl border outline-none font-bold uppercase tracking-tight mb-3 text-sm appearance-none relative z-10 ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`}>
+                                <select value={calcEj} onChange={(e) => setCalcEj(e.target.value)}
+                                        className={`w-full p-3 rounded-xl border outline-none font-bold uppercase tracking-tight mb-3 text-sm appearance-none relative z-10 ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`}>
                                     {LIBRERIA_EJERCICIOS.filter(ej => analizarMusculo(ej.nombre) !== 'desconocido').map(ej => (
                                         <option key={ej.nombre} value={ej.nombre}>{ej.nombre}</option>
                                     ))}
                                 </select>
 
                                 <div className="flex gap-3 mb-4 relative z-10">
-                                    <input type="number" placeholder="Peso (kg)" value={calcPeso} onChange={(e) => setCalcPeso(e.target.value)} className={`w-1/2 p-3 rounded-xl border outline-none font-bold text-center ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`} />
-                                    <input type="number" placeholder="Reps" value={calcReps} onChange={(e) => setCalcReps(e.target.value)} className={`w-1/2 p-3 rounded-xl border outline-none font-bold text-center ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`} />
+                                    <input type="number" placeholder="Peso (kg)" value={calcPeso}
+                                           onChange={(e) => setCalcPeso(e.target.value)}
+                                           className={`w-1/2 p-3 rounded-xl border outline-none font-bold text-center ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`}/>
+                                    <input type="number" placeholder="Reps" value={calcReps}
+                                           onChange={(e) => setCalcReps(e.target.value)}
+                                           className={`w-1/2 p-3 rounded-xl border outline-none font-bold text-center ${darkMode ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-black/10 text-gray-900'}`}/>
                                 </div>
 
                                 <div className="flex flex-col items-center justify-center pt-2 relative z-10">
                                     {analizarMusculo(calcEj) !== 'desconocido' ? (
                                         <>
-                                            <span className={`text-[10px] font-black uppercase tracking-widest opacity-70 mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Tu Repetición Máxima es</span>
-                                            <div className={`text-4xl font-black tracking-tighter ${darkMode ? 'text-white' : 'text-gray-900'}`}>{rmCalcAislada} <span className="text-xl text-gray-500">KG</span></div>
+                                            <span
+                                                className={`text-[10px] font-black uppercase tracking-widest opacity-70 mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Tu Repetición Máxima es</span>
+                                            <div
+                                                className={`text-4xl font-black tracking-tighter ${darkMode ? 'text-white' : 'text-gray-900'}`}>{rmCalcAislada}
+                                                <span className="text-xl text-gray-500">KG</span></div>
                                             {rangoCalcAislada && (
-                                                <div className={`mt-2 px-4 py-1.5 rounded-full ${rangoCalcAislada.bg} ${rangoCalcAislada.color} text-xs font-black uppercase tracking-widest`}>
+                                                <div
+                                                    className={`mt-2 px-4 py-1.5 rounded-full ${rangoCalcAislada.bg} ${rangoCalcAislada.color} text-xs font-black uppercase tracking-widest`}>
                                                     RANGO: {rangoCalcAislada.nombre}
                                                 </div>
                                             )}
                                         </>
                                     ) : (
-                                        <div className={`text-center p-3 rounded-xl border border-dashed w-full ${darkMode ? 'border-gray-700 bg-black/20 text-gray-400' : 'border-gray-300 bg-white/50 text-gray-500'}`}>
-                                            <span className="text-[10px] font-black uppercase tracking-widest block mb-1">EJERCICIO NO BÁSICO</span>
+                                        <div
+                                            className={`text-center p-3 rounded-xl border border-dashed w-full ${darkMode ? 'border-gray-700 bg-black/20 text-gray-400' : 'border-gray-300 bg-white/50 text-gray-500'}`}>
+                                            <span
+                                                className="text-[10px] font-black uppercase tracking-widest block mb-1">EJERCICIO NO BÁSICO</span>
                                             <span className="text-xs font-semibold">El 1RM no aplica o no está soportado.</span>
                                         </div>
                                     )}
@@ -1017,11 +1276,13 @@ export default function App() {
                         )}
 
                         <div className="glass-effect glass-border p-6 rounded-[2rem] mb-6">
-                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">TIEMPO DE DESCANSO</p>
+                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">TIEMPO DE
+                                DESCANSO</p>
                             <div className="grid grid-cols-3 gap-3">
                                 {[60, 90, 120, 180, 240, 300].map(t => (
-                                    <button key={t} onClick={() => setConfig({...config, descanso: t})} className={`py-4 rounded-2xl font-black tracking-tight transition-all duration-300 ${config.descanso === t ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-105' : `${darkMode ? 'bg-black/20 text-gray-400' : 'bg-white/50 text-gray-600'}`}`}>
-                                        {t >= 60 ? `${t/60} MIN` : `${t} SEG`}
+                                    <button key={t} onClick={() => setConfig({...config, descanso: t})}
+                                            className={`py-4 rounded-2xl font-black tracking-tight transition-all duration-300 ${config.descanso === t ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-105' : `${darkMode ? 'bg-black/20 text-gray-400' : 'bg-white/50 text-gray-600'}`}`}>
+                                        {t >= 60 ? `${t / 60} MIN` : `${t} SEG`}
                                     </button>
                                 ))}
                             </div>
@@ -1029,7 +1290,8 @@ export default function App() {
 
                         <div className="glass-effect glass-border p-6 rounded-[2rem]">
                             <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-5">APARIENCIA</p>
-                            <button onClick={() => setDarkMode(!darkMode)} className={`w-full py-5 rounded-2xl font-black tracking-widest uppercase flex items-center justify-center gap-3 transition-colors duration-300 ${darkMode ? 'bg-white/10 text-white' : 'bg-white text-gray-900 shadow-sm'}`}>
+                            <button onClick={() => setDarkMode(!darkMode)}
+                                    className={`w-full py-5 rounded-2xl font-black tracking-widest uppercase flex items-center justify-center gap-3 transition-colors duration-300 ${darkMode ? 'bg-white/10 text-white' : 'bg-white text-gray-900 shadow-sm'}`}>
                                 {darkMode ? '🌙 MODO OSCURO' : '☀️ MODO CLARO'}
                             </button>
                         </div>
@@ -1038,127 +1300,241 @@ export default function App() {
                     <div className="pt-6 animate-in fade-in duration-300">
                         <div className="text-center mb-10">
                             <h1 className={`text-5xl font-black italic tracking-tighter uppercase mb-2 ${textGradient}`}>GYMZAPP</h1>
-                            <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.3em]">Elige tu entrenamiento</p>
+                            <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.3em]">Elige tu
+                                entrenamiento</p>
                         </div>
 
-                        <div className="space-y-4">
-                            {Object.keys(rutinas).map(grupo => (
-                                <div key={grupo} className={`flex items-stretch rounded-[1.5rem] overflow-hidden glass-border glass-effect transition-transform active:scale-[0.98]`}>
-                                    <div className={`relative w-18 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
-                                        {rutinaImages[grupo] ? (
-                                            <button onClick={() => { if(window.confirm("¿Eliminar la foto de esta rutina?")) { const imgs = {...rutinaImages}; delete imgs[grupo]; setRutinaImages(imgs); } }} className="absolute inset-0 w-full h-full block">
-                                                <img src={rutinaImages[grupo]} alt={grupo} className="w-full h-full object-cover" />
-                                            </button>
-                                        ) : (
-                                            <>
-                                                <div className="flex flex-col items-center gap-1 opacity-40">
-                                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
+                        {/* 👇 NUEVO: Envolvemos toda tu lista con el contexto de arrastre */}
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndRutinas}>
+                            <SortableContext items={ordenRutinas} strategy={verticalListSortingStrategy}>
+
+                                <div className="space-y-4">
+                                    {/* 👇 CAMBIO: Ahora mapeamos tu nuevo array 'ordenRutinas' en vez de Object.keys */}
+                                    {ordenRutinas.map(grupo => {
+                                        if (!rutinas[grupo]) return null; // Por seguridad si borras una rutina
+
+                                        return (
+                                            /* 👇 NUEVO: Envolvemos tu tarjeta con el item arrastrable */
+                                            <SortableRutinaItem key={grupo} id={grupo}>
+
+                                                {/* 📦 AQUÍ EMPIEZA TU TARJETA TAL CUAL LA TENÍAS: */}
+                                                <div className={`flex items-stretch rounded-[1.5rem] overflow-hidden glass-border glass-effect transition-transform active:scale-[0.98]`}>
+                                                    <div className={`relative w-18 shrink-0 flex flex-col items-center justify-center overflow-hidden border-r ${darkMode ? 'border-white/5 bg-black/30' : 'border-black/5 bg-gray-100'}`}>
+                                                        {rutinaImages[grupo] ? (
+                                                            <button onClick={() => {
+                                                                if (window.confirm("¿Eliminar la foto de esta rutina?")) {
+                                                                    const imgs = {...rutinaImages};
+                                                                    delete imgs[grupo];
+                                                                    setRutinaImages(imgs);
+                                                                }
+                                                            }} className="absolute inset-0 w-full h-full block">
+                                                                <img src={rutinaImages[grupo]} alt={grupo} className="w-full h-full object-cover"/>
+                                                            </button>
+                                                        ) : (
+                                                            <>
+                                                                <div className="flex flex-col items-center gap-1 opacity-40">
+                                                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                                                    </svg>
+                                                                </div>
+                                                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, grupo)} className="absolute inset-0 opacity-0 cursor-pointer"/>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-5 text-left active:opacity-80 overflow-hidden outline-none">
+                                                        <span className={`block w-full text-[1.1rem] font-black uppercase tracking-tight truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
+                                                    </button>
+                                                    <button onClick={() => editarNombreRutinaMain(grupo)} className={`w-12 flex items-center justify-center transition-colors border-l ${darkMode ? 'border-white/5 text-blue-400 active:bg-blue-400/10' : 'border-black/5 text-blue-600 active:bg-blue-600/10'} outline-none`}>
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                                        </svg>
+                                                    </button>
+                                                    <button onClick={() => borrarRutinaYFoto(grupo)} className={`w-12 flex items-center justify-center text-red-500/80 active:bg-red-500/10 transition-colors border-l ${darkMode ? 'border-white/5' : 'border-black/5'} outline-none`}>
+                                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                        </svg>
+                                                    </button>
                                                 </div>
-                                                <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, grupo)} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                            </>
-                                        )}
-                                    </div>
-                                    <button onClick={() => setgruposel(grupo)} className="flex-1 p-5 text-left active:opacity-80 overflow-hidden outline-none">
-                                        <span className={`block w-full text-[1.1rem] font-black uppercase tracking-tight truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
-                                    </button>
-                                    <button onClick={() => editarNombreRutinaMain(grupo)} className={`w-12 flex items-center justify-center transition-colors border-l ${darkMode ? 'border-white/5 text-blue-400 active:bg-blue-400/10' : 'border-black/5 text-blue-600 active:bg-blue-600/10'} outline-none`}>
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                    </button>
-                                    <button onClick={() => borrarRutinaYFoto(grupo)} className={`w-12 flex items-center justify-center text-red-500/80 active:bg-red-500/10 transition-colors border-l ${darkMode ? 'border-white/5' : 'border-black/5'} outline-none`}>
-                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                    </button>
+                                                {/* 📦 AQUÍ TERMINA TU TARJETA */}
+
+                                            </SortableRutinaItem>
+                                            /* 👆 NUEVO: Cerramos el item arrastrable */
+                                        );
+                                    })}
                                 </div>
-                            ))}
-                        </div>
+
+                            </SortableContext>
+                        </DndContext>
 
                         <div className="mt-8 pt-8 border-t border-gray-500/20 space-y-4">
-                            <button onClick={() => { setMostrarCreadorRutinas(true); setMusculosSeleccionados([]); }} className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors duration-200 ${darkMode ? 'bg-indigo-600/20 text-indigo-400 active:bg-indigo-600/30' : 'bg-indigo-100 text-indigo-600 active:bg-indigo-200'} border-none outline-none`}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            <button onClick={() => {
+                                setMostrarCreadorRutinas(true);
+                                setMusculosSeleccionados([]);
+                            }}
+                                    className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors duration-200 ${darkMode ? 'bg-indigo-600/20 text-indigo-400 active:bg-indigo-600/30' : 'bg-indigo-100 text-indigo-600 active:bg-indigo-200'} border-none outline-none`}>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
                                 CREAR POR MÚSCULOS
                             </button>
                             <div className="flex gap-3 relative">
-                                <input type="text" placeholder="O escribe el nombre a mano..." value={nuevoGrupo} onChange={e => setNuevoGrupo(e.target.value)} className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} font-medium outline-none focus:border-blue-500/50`} />
-                                <button onClick={() => { if(!nuevoGrupo.trim()) return; setRutinas(p => ({...p, [nuevoGrupo.trim()]: []})); setNuevoGrupo(''); }} className="bg-blue-600 px-7 rounded-2xl font-black text-2xl text-white active:scale-95 border-none outline-none">+</button>
+                                <input type="text" placeholder="O escribe el nombre a mano..." value={nuevoGrupo}
+                                       onChange={e => setNuevoGrupo(e.target.value)}
+                                       className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} font-medium outline-none focus:border-blue-500/50`}/>
+                                <button onClick={() => {
+                                    if (!nuevoGrupo.trim()) return;
+                                    setRutinas(p => ({...p, [nuevoGrupo.trim()]: []}));
+                                    setNuevoGrupo('');
+                                }}
+                                        className="bg-blue-600 px-7 rounded-2xl font-black text-2xl text-white active:scale-95 border-none outline-none">+
+                                </button>
                             </div>
                         </div>
                     </div>
                 ) : (
                     <div className="animate-in fade-in duration-300">
-                        <div className="sticky top-0 z-50 pt-2 pb-4 glass-nav border-b border-gray-500/10 mb-6 -mx-5 px-5">
+                        <div
+                            className="sticky top-0 z-50 pt-2 pb-4 glass-nav border-b border-gray-500/10 mb-6 -mx-5 px-5">
                             <div className="flex items-center justify-between mb-2 mt-2">
                                 <div className="flex items-center gap-4 overflow-hidden">
-                                    <button onClick={() => setgruposel(null)} className={`outline-none p-2.5 rounded-xl active:scale-90 transition-transform flex-shrink-0 ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
-                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                                    <button onClick={() => setgruposel(null)}
+                                            className={`outline-none p-2.5 rounded-xl active:scale-90 transition-transform flex-shrink-0 ${darkMode ? 'bg-white/10 text-white' : 'bg-black/5 text-gray-900'}`}>
+                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3}
+                                                  d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                        </svg>
                                     </button>
                                     <h2 className={`text-2xl font-black uppercase tracking-tight truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{gruposel}</h2>
                                 </div>
-                                <button onClick={() => editarNombreRutinaMain(gruposel)} className={`outline-none p-2.5 rounded-xl transition-colors flex-shrink-0 ${darkMode ? 'text-gray-400 active:bg-white/10' : 'text-gray-500 active:bg-black/5'}`}>
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                <button onClick={() => editarNombreRutinaMain(gruposel)}
+                                        className={`outline-none p-2.5 rounded-xl transition-colors flex-shrink-0 ${darkMode ? 'text-gray-400 active:bg-white/10' : 'text-gray-500 active:bg-black/5'}`}>
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                    </svg>
                                 </button>
                             </div>
 
                             {timerActivo && (
-                                <div className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between animate-in zoom-in-95 duration-200">
-                                    <span className="text-xs font-black uppercase text-blue-100 tracking-widest opacity-90">Descanso</span>
-                                    <span className="text-2xl font-black tabular-nums text-white">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
-                                    <button onClick={() => setTimerActivo(false)} className="text-[10px] font-black bg-black/20 text-white px-3 py-1.5 rounded-md uppercase tracking-wider outline-none">Saltar</button>
+                                <div
+                                    className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between animate-in zoom-in-95 duration-200">
+                                    <span
+                                        className="text-xs font-black uppercase text-blue-100 tracking-widest opacity-90">Descanso</span>
+                                    <span
+                                        className="text-2xl font-black tabular-nums text-white">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
+                                    <button onClick={() => setTimerActivo(false)}
+                                            className="text-[10px] font-black bg-black/20 text-white px-3 py-1.5 rounded-md uppercase tracking-wider outline-none">Saltar
+                                    </button>
                                 </div>
                             )}
                         </div>
 
-                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({active, over}) => {
-                            if (active.id !== over?.id) {
-                                setRutinas(prev => {
-                                    const lista = [...prev[gruposel]];
-                                    return { ...prev, [gruposel]: arrayMove(lista, lista.findIndex(e => e.id === active.id), lista.findIndex(e => e.id === over.id)) };
-                                });
-                            }
-                        }}>
+                        <DndContext sensors={sensors} collisionDetection={closestCenter}
+                                    onDragEnd={({active, over}) => {
+                                        if (active.id !== over?.id) {
+                                            setRutinas(prev => {
+                                                const lista = [...prev[gruposel]];
+                                                return {
+                                                    ...prev,
+                                                    [gruposel]: arrayMove(lista, lista.findIndex(e => e.id === active.id), lista.findIndex(e => e.id === over.id))
+                                                };
+                                            });
+                                        }
+                                    }}>
                             <SortableContext items={rutinas[gruposel]} strategy={verticalListSortingStrategy}>
                                 <div className="space-y-2">
                                     {rutinas[gruposel].map(ej => (
-                                        <Ejercicio key={ej.id} ejercicio={ej} onActualizarSerie={(idS, c, v) => actualizarSerie(ej.id, idS, c, v)} onAgregarSerie={() => agregarSerie(ej.id)} onEliminarEjercicio={() => setRutinas(p => ({...p, [gruposel]: p[gruposel].filter(x => x.id !== ej.id)}))} onEditarNombre={editarNombreEjercicio} darkMode={darkMode} showConfirm={showConfirm} mostrar1RM={mostrar1RM} />
+                                        <Ejercicio key={ej.id} ejercicio={ej}
+                                                   onActualizarSerie={(idS, c, v) => actualizarSerie(ej.id, idS, c, v)}
+                                                   onAgregarSerie={() => agregarSerie(ej.id)}
+                                                   onEliminarEjercicio={() => setRutinas(p => ({
+                                                       ...p,
+                                                       [gruposel]: p[gruposel].filter(x => x.id !== ej.id)
+                                                   }))} onEditarNombre={editarNombreEjercicio} darkMode={darkMode}
+                                                   showConfirm={showConfirm} mostrar1RM={mostrar1RM}/>
                                     ))}
                                 </div>
                             </SortableContext>
                         </DndContext>
 
                         <div className="mt-10 space-y-4 pb-8 border-t border-white/5 pt-8">
-                            <button onClick={() => setMostrarLibreria(true)} className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors duration-200 ${darkMode ? 'bg-indigo-600/20 text-indigo-400 active:bg-indigo-600/30' : 'bg-indigo-100 text-indigo-600 active:bg-indigo-200'} border-none outline-none`}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            <button onClick={() => setMostrarLibreria(true)}
+                                    className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors duration-200 ${darkMode ? 'bg-indigo-600/20 text-indigo-400 active:bg-indigo-600/30' : 'bg-indigo-100 text-indigo-600 active:bg-indigo-200'} border-none outline-none`}>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
                                 EXPLORAR LIBRERÍA
                             </button>
                             <div className="flex gap-3 relative mt-2">
-                                <input type="text" placeholder="O escribe uno manual..." value={nuevoEjercicio} onChange={e => setNuevoEjercicio(e.target.value)} className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} focus:border-blue-500/50 outline-none`} />
-                                <button onClick={agregarEjercicio} className={`font-bold px-6 rounded-xl border border-transparent active:scale-95 ${darkMode ? 'bg-gray-800 text-blue-400' : 'bg-gray-200 text-blue-600'}`}>AÑADIR</button>
+                                <input type="text" placeholder="O escribe uno manual..." value={nuevoEjercicio}
+                                       onChange={e => setNuevoEjercicio(e.target.value)}
+                                       className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} focus:border-blue-500/50 outline-none`}/>
+                                <button onClick={agregarEjercicio}
+                                        className={`font-bold px-6 rounded-xl border border-transparent active:scale-95 ${darkMode ? 'bg-gray-800 text-blue-400' : 'bg-gray-200 text-blue-600'}`}>AÑADIR
+                                </button>
                             </div>
-                            <button onClick={confirmarRutina} className="w-full py-5 mt-4 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl active:scale-[0.98] transition-all border-none outline-none">GUARDAR ENTRENAMIENTO</button>
+                            <button onClick={confirmarRutina}
+                                    className="w-full py-5 mt-4 bg-blue-600 text-white font-black uppercase tracking-widest rounded-2xl active:scale-[0.98] transition-all border-none outline-none">GUARDAR
+                                ENTRENAMIENTO
+                            </button>
                         </div>
                     </div>
                 )}
-                {confirmacionVisible && <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-green-500/90 backdrop-blur-md text-white px-8 py-4 rounded-full font-black tracking-widest shadow-xl z-[100] animate-in slide-in-from-top-10 fade-in duration-300 pointer-events-none">¡GUARDADO!</div>}
+                {confirmacionVisible && <div
+                    className="fixed top-24 left-1/2 -translate-x-1/2 bg-green-500/90 backdrop-blur-md text-white px-8 py-4 rounded-full font-black tracking-widest shadow-xl z-[100] animate-in slide-in-from-top-10 fade-in duration-300 pointer-events-none">¡GUARDADO!</div>}
             </main>
 
             {gruposel === null && (
                 <nav className="fixed bottom-0 left-0 right-0 glass-nav border-t border-gray-500/10 p-5 z-[100] pb-8">
                     <div className="max-w-xl mx-auto flex justify-around items-center">
-                        <button onClick={() => setSeccion('rutinas')} className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'rutinas' ? 'text-blue-500' : 'text-gray-500'}`}>
-                            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>
+                        <button onClick={() => setSeccion('rutinas')}
+                                className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'rutinas' ? 'text-blue-500' : 'text-gray-500'}`}>
+                            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                            </svg>
                             <span className="text-[10px] font-black uppercase tracking-widest">RUTINAS</span>
                         </button>
 
-                        <button onClick={() => setSeccion('progreso')} className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'progreso' ? 'text-blue-500' : 'text-gray-500'}`}>
-                            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
+                        <button onClick={() => setSeccion('progreso')}
+                                className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'progreso' ? 'text-blue-500' : 'text-gray-500'}`}>
+                            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd"
+                                      d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                                      clipRule="evenodd"/>
+                            </svg>
                             <span className="text-[10px] font-black uppercase tracking-widest">PROGRESO</span>
                         </button>
 
-                        <button onClick={() => setSeccion('ajustes')} className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'ajustes' ? 'text-blue-500' : 'text-gray-500'}`}>
-                            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" /></svg>
+                        <button onClick={() => setSeccion('ajustes')}
+                                className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'ajustes' ? 'text-blue-500' : 'text-gray-500'}`}>
+                            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd"
+                                      d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                                      clipRule="evenodd"/>
+                            </svg>
                             <span className="text-[10px] font-bold uppercase tracking-widest">AJUSTES</span>
                         </button>
                     </div>
                 </nav>
             )}
+        </div>
+    );
+}
+
+
+function SortableRutinaItem({ id, children }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: id });
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.6 : 1,
+    };
+    return (
+        <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="outline-none">
+            {children}
         </div>
     );
 }
