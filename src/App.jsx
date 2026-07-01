@@ -3,6 +3,19 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+
+import { createClient } from '@supabase/supabase-js';
+
+
+const SUPABASE_URL = "https://ongcpxtxzvdqvsxzvvpf.supabase.co";
+
+
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9uZ2NweHR4enZkcXZzeHp2dnBmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5MTUwMzMsImV4cCI6MjA5ODQ5MTAzM30.O3OHzL2uOW0uhv3MWYibuPFDyBUM8H9OBBlSDr2EjGg";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+
+
 // --- BASE DE DATOS DE EJERCICIOS ---
 const LIBRERIA_EJERCICIOS = [
     { nombre: "Press de Banca", imagen: "/ejercicios/pressbanca.png" },
@@ -67,7 +80,7 @@ const calcular1RMInteligente = (peso, reps, ejercicioNombre) => {
     const repsNum = parseInt(reps);
     const categoria = analizarMusculo(ejercicioNombre);
 
-    // 🛡️ LÍMITE DE SEGURIDAD:
+
     // Si las reps son > 15, la fórmula de Brzycki se vuelve inestable.
     // En esos casos, usamos solo la fórmula de Epley, que es lineal y no "explota".
     if (repsNum > 15) {
@@ -85,7 +98,7 @@ const obtenerRango = (rm, ejercicioNombre) => {
 
     const categoria = analizarMusculo(ejercicioNombre);
 
-    // 🛑 SI ES UN EJERCICIO NO BÁSICO O NO LO RECONOCE, NO HAY RANGO
+    // SI ES UN EJERCICIO NO BÁSICO O NO LO RECONOCE, NO HAY RANGO
     if (categoria === 'desconocido') return null;
 
     let multiplicador = 1;
@@ -361,12 +374,70 @@ export default function App() {
     const touchEnd = useRef(null);
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+    const [sessionUser, setSessionUser] = useState(null);
+    const [cargandoNube, setCargandoNube] = useState(false);
+    const [authEmail, setAuthEmail] = useState('');
+    const [authPassword, setAuthPassword] = useState('');
+    const [authError, setAuthError] = useState('');
+    const [modoRegistro, setModoRegistro] = useState(false);
+
     useEffect(() => { localStorage.setItem('rutinas', JSON.stringify(rutinas)); }, [rutinas]);
     useEffect(() => { localStorage.setItem('gymConfig', JSON.stringify(config)); }, [config]);
     useEffect(() => { localStorage.setItem('gymTheme', JSON.stringify(darkMode)); }, [darkMode]);
     useEffect(() => { localStorage.setItem('gymMostrar1RM', JSON.stringify(mostrar1RM)); }, [mostrar1RM]);
     useEffect(() => { localStorage.setItem('rutinaImages', JSON.stringify(rutinaImages)); }, [rutinaImages]);
     useEffect(() => { localStorage.setItem('gymHistorial', JSON.stringify(historial)); }, [historial]);
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                setSessionUser(session.user);
+                descargarDatosDeNube(session.user.id);
+            }
+        });
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session) {
+                setSessionUser(session.user);
+                descargarDatosDeNube(session.user.id);
+            } else { setSessionUser(null); }
+        });
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const descargarDatosDeNube = async (userId) => {
+        setCargandoNube(true);
+        try {
+            const { data, error } = await supabase.from('perfiles_gym').select('*').eq('id', userId).single();
+            if (error && error.code !== 'PGRST116') throw error;
+            if (data) {
+                // Si la nube tiene datos nuevos, actualiza tus estados (y tus efectos automáticos los guardarán en localStorage)
+                if (data.rutinas) setRutinas(data.rutinas);
+                if (data.rutina_images) setRutinaImages(data.rutina_images);
+                if (data.historial) setHistorial(data.historial);
+                if (data.config) setConfig(data.config);
+            } else {
+                // Si la nube está vacía (primer registro), lee lo tuyo local y haz el primer respaldo
+                await supabase.from('perfiles_gym').upsert({
+                    id: userId, rutinas, historial, config, rutina_images: rutinaImages, updated_at: new Date()
+                });
+            }
+        } catch (err) { console.error(err.message); } finally { setCargandoNube(false); }
+    };
+
+    const respaldarEnNube = async (nuevasRutinas = null, nuevoHistorial = null) => {
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) return;
+        try {
+            await supabase.from('perfiles_gym').upsert({
+                id: user.id,
+                rutinas: nuevasRutinas || rutinas,
+                historial: nuevoHistorial || historial,
+                config: config,
+                rutina_images: rutinaImages,
+                updated_at: new Date()
+            });
+        } catch (err) { console.error("Error backup:", err.message); }
+    };
 
     const onTouchStart = (e) => { touchEnd.current = null; touchStart.current = e.targetTouches[0].clientX; }
     const onTouchMove = (e) => { touchEnd.current = e.targetTouches[0].clientX; }
@@ -501,6 +572,8 @@ export default function App() {
 
         setConfirmacionVisible(true);
         setTimeout(() => setConfirmacionVisible(false), 2000);
+
+        respaldarEnNube(rutinaActualizada, historial);
     };
 
     const handleImageUpload = (e, grupo) => {
@@ -803,6 +876,98 @@ export default function App() {
                 ) : seccion === 'ajustes' ? (
                     <div className="pt-6 animate-in fade-in duration-300 pb-10">
                         <h1 className={`text-4xl font-black italic tracking-tighter mb-8 uppercase ${textGradient}`}>AJUSTES</h1>
+
+                        {/* --- PANEL DE SINCRONIZACIÓN SUPABASE CLOUD --- */}
+                        <div className={`p-6 rounded-[2rem] mb-6 glass-effect glass-border`}>
+                            <h3 className={`font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5 5 0 00-4.591-2.941A1.39 1.39 0 0011 7.5V11m0 0v3m0-3h3m-3 0H9" />
+                                </svg>
+                                Sincronización en la Nube
+                            </h3>
+
+                            {cargandoNube ? (
+                                <div className="py-4 text-center text-xs font-black text-emerald-500 uppercase tracking-widest animate-pulse">
+                                    Estableciendo conexión con el búnker...
+                                </div>
+                            ) : sessionUser ? (
+                                <div className="space-y-3">
+                                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
+                                        <p className="text-emerald-500 text-[11px] font-black uppercase tracking-wider">Historial Sincronizado y Seguro</p>
+                                        <p className="text-gray-400 text-xs truncate font-semibold mt-0.5">{sessionUser.email}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => respaldarEnNube()}
+                                            className="flex-1 py-3 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 active:bg-emerald-600 text-[11px] font-black uppercase tracking-widest rounded-xl transition-colors"
+                                        >
+                                            Forzar Backup
+                                        </button>
+                                        <button
+                                            onClick={async () => { await supabase.auth.signOut(); localStorage.clear(); window.location.reload(); }}
+                                            className="py-3 px-4 bg-red-500/10 text-red-500 border border-red-500/20 active:bg-red-600 text-[11px] font-black uppercase tracking-widest rounded-xl transition-colors"
+                                        >
+                                            Salir
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <p className="text-gray-500 text-xs font-medium mb-2 leading-relaxed">
+                                        Crea una cuenta para blindar tus rutinas e historial.
+                                    </p>
+
+                                    {authError && <p className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-500/10 p-2.5 rounded-xl text-center">{authError}</p>}
+
+                                    <div className="space-y-2">
+                                        <input
+                                            type="email"
+                                            placeholder="CORREO ELECTRÓNICO"
+                                            value={authEmail}
+                                            onChange={e => setAuthError('') || setAuthEmail(e.target.value)}
+                                            className={`w-full rounded-xl px-3 py-2.5 outline-none font-semibold text-sm border ${darkMode ? 'bg-black/30 text-gray-100 border-white/5 focus:border-emerald-500' : 'bg-gray-100/50 text-gray-900 border-black/5 focus:border-emerald-500'}`}
+                                        />
+                                        <input
+                                            type="password"
+                                            placeholder="CONTRASEÑA"
+                                            value={authPassword}
+                                            onChange={e => setAuthError('') || setAuthPassword(e.target.value)}
+                                            className={`w-full rounded-xl px-3 py-2.5 outline-none font-semibold text-sm border ${darkMode ? 'bg-black/30 text-gray-100 border-white/5 focus:border-emerald-500' : 'bg-gray-100/50 text-gray-900 border-black/5 focus:border-emerald-500'}`}
+                                        />
+                                    </div>
+
+                                    <button
+                                        onClick={async () => {
+                                            setAuthError('');
+                                            if (!authEmail || !authPassword) return setAuthError('RELLENA TODOS LOS CAMPOS');
+                                            try {
+                                                if (modoRegistro) {
+                                                    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+                                                    if (error) throw error;
+                                                    alert("¡Cuenta creada! Revisa tu email para confirmarla.");
+                                                } else {
+                                                    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+                                                    if (error) throw error;
+                                                }
+                                            } catch (err) {
+                                                setAuthError(err.message.toUpperCase());
+                                            }
+                                        }}
+                                        className="w-full py-3.5 bg-emerald-600 text-white font-black text-[11px] uppercase tracking-widest rounded-xl active:bg-emerald-700 transition-colors"
+                                    >
+                                        {modoRegistro ? 'CREAR CUENTA SEGURA' : 'INICIAR SESIÓN'}
+                                    </button>
+
+                                    <button
+                                        onClick={() => setModoRegistro(!modoRegistro)}
+                                        className="w-full text-center text-gray-500 font-black text-[10px] uppercase tracking-wider py-1 hover:text-emerald-400 transition-colors"
+                                    >
+                                        {modoRegistro ? '¿Ya tienes cuenta? Inicia Sesión' : '¿No tienes cuenta? Regístrate Gratis'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        {/* 👆 AQUÍ TERMINA EL PANEL DE SUPABASE (Le he adaptado las clases rounded-[2rem] y glass para que quede calcado a lo tuyo) 👆 */}
 
                         {/* --- BOTÓN ACTIVAR/DESACTIVAR GAMIFICACIÓN --- */}
                         <div className="glass-effect glass-border p-6 rounded-[2rem] mb-6">
