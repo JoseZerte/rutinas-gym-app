@@ -447,7 +447,7 @@ export default function App() {
             const nuevoOrden = arrayMove(items, oldIndex, newIndex);
 
             // Sincroniza rápido con Supabase para guardar el nuevo orden
-            setTimeout(() => respaldarEnNube(), 500);
+            setTimeout(() => respaldarEnNube(null, null, nuevoOrden), 500);
             return nuevoOrden;
         });
     };
@@ -486,12 +486,18 @@ export default function App() {
                 if (data.config) setConfig(data.config);
                 if (data.orden_rutinas) setOrdenRutinas(data.orden_rutinas);
 
+                if (data.orden_rutinas && data.orden_rutinas.length > 0) {
+                    setOrdenRutinas(data.orden_rutinas);
+                } else if (data.rutinas) {
+                    setOrdenRutinas(Object.keys(data.rutinas));
+                }
+
                 localStorage.setItem('nube_descargada', 'true');
 
             } else {
                 // Si la nube está vacía (primer registro), lee lo tuyo local y haz el primer respaldo
                 await supabase.from('perfiles_gym').upsert({
-                    id: userId, rutinas, historial, config, rutina_images: rutinaImages, updated_at: new Date()
+                    id: userId, rutinas, historial, config, rutina_images: rutinaImages, orden_rutinas: ordenRutinas, updated_at: new Date()
                 });
 
                 localStorage.setItem('nube_descargada', 'true');
@@ -504,7 +510,7 @@ export default function App() {
         }
     };
 
-    const respaldarEnNube = async (nuevasRutinas = null, nuevoHistorial = null) => {
+    const respaldarEnNube = async (nuevasRutinas = null, nuevoHistorial = null, nuevoOrden = null) => {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) return;
         try {
@@ -514,7 +520,7 @@ export default function App() {
                 historial: nuevoHistorial || historial,
                 config: config,
                 rutina_images: rutinaImages,
-                orden_rutinas: ordenRutinas,
+                orden_rutinas: nuevoOrden || ordenRutinas,
                 updated_at: new Date()
             });
         } catch (err) {
