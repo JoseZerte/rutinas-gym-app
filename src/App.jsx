@@ -674,54 +674,46 @@ export default function App() {
 
         const fechaLocal = obtenerFechaLocal();
 
-        setHistorial(prev => {
-            const nuevo = {...prev};
-            // Cogemos los entrenos que ya haya hoy (o un array vacío si no hay ninguno)
-            const entrenosHoy = nuevo[fechaLocal] ? [...nuevo[fechaLocal]] : [];
+        // 1. 🌟 GENERAMOS EL NUEVO HISTORIAL SÍNCRONAMENTE (Para evitar lag en la nube)
+        const nuevoHistorial = { ...historial };
+        const entrenosHoy = nuevoHistorial[fechaLocal] ? [...nuevoHistorial[fechaLocal]] : [];
+        const indexExistente = entrenosHoy.findIndex(entreno => entreno.nombre === gruposel);
+        const nuevoEntrenoGuardar = { nombre: gruposel, ejercicios: JSON.parse(JSON.stringify(rutinaActualizada)) };
 
-            // Buscamos si HOY ya hemos guardado esta misma rutina (ej: "Pecho - Triceps")
-            const indexExistente = entrenosHoy.findIndex(entreno => entreno.nombre === gruposel);
+        if (indexExistente >= 0) {
+            entrenosHoy[indexExistente] = nuevoEntrenoGuardar;
+        } else {
+            entrenosHoy.push(nuevoEntrenoGuardar);
+        }
+        nuevoHistorial[fechaLocal] = entrenosHoy;
 
-            const nuevoEntrenoGuardar = {
-                nombre: gruposel,
-                ejercicios: JSON.parse(JSON.stringify(rutinaActualizada))
-            };
+        // Actualizamos el estado local de React
+        setHistorial(nuevoHistorial);
 
-            if (indexExistente >= 0) {
-                // Si ya existe, LO ACTUALIZAMOS (machacamos el viejo con los datos nuevos)
-                entrenosHoy[indexExistente] = nuevoEntrenoGuardar;
-            } else {
-                // Si no existe, LO AÑADIMOS al final
-                entrenosHoy.push(nuevoEntrenoGuardar);
-            }
+        // 2. 🌟 GENERAMOS EL OBJETO DE RUTINAS COMPLETO (No solo el array de una rutina)
+        const rutinasActualizadas = { ...rutinas };
+        for (const g in rutinasActualizadas) {
+            rutinasActualizadas[g] = rutinasActualizadas[g].map(ej => ({
+                ...ej,
+                series: ej.series.map(s => ({
+                    ...s,
+                    peso: s.nuevoPeso || s.peso,
+                    reps: s.nuevoReps || s.reps,
+                    nuevoPeso: '',
+                    nuevoReps: '',
+                    completada: false
+                }))
+            }));
+        }
 
-            nuevo[fechaLocal] = entrenosHoy;
-            return nuevo;
-        });
-
-        // Limpiamos los inputs visuales
-        setRutinas(prev => {
-            const act = {...prev};
-            for (const g in act) {
-                act[g] = act[g].map(ej => ({
-                    ...ej,
-                    series: ej.series.map(s => ({
-                        ...s,
-                        peso: s.nuevoPeso || s.peso,
-                        reps: s.nuevoReps || s.reps,
-                        nuevoPeso: '',
-                        nuevoReps: '',
-                        completada: false
-                    }))
-                }));
-            }
-            return act;
-        });
+        // Actualizamos el estado local de React
+        setRutinas(rutinasActualizadas);
 
         setConfirmacionVisible(true);
         setTimeout(() => setConfirmacionVisible(false), 2000);
 
-        respaldarEnNube(rutinaActualizada, historial);
+        // 3. 🚀 ¡REPARADO! Mandamos los OBJETOS GLOBALES y ACTUALIZADOS reales a Supabase
+        respaldarEnNube(rutinasActualizadas, nuevoHistorial);
     };
 
     const handleImageUpload = (e, grupo) => {
