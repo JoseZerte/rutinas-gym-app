@@ -471,40 +471,76 @@ export default function App() {
     }, []);
 
     const descargarDatosDeNube = async (userId) => {
-
-        if (localStorage.getItem('nube_descargada') === 'true') return;
+        // 🛡️ SEGURIDAD: Si el local storage ya está corrupto (es un array), forzamos la descarga para repararlo
+        const localRutinas = JSON.parse(localStorage.getItem('rutinas'));
+        if (localStorage.getItem('nube_descargada') === 'true' && !Array.isArray(localRutinas)) return;
 
         setCargandoNube(true);
         try {
             const {data, error} = await supabase.from('perfiles_gym').select('*').eq('id', userId).single();
             if (error && error.code !== 'PGRST116') throw error;
-            if (data) {
-                // Si la nube tiene datos nuevos, actualiza tus estados (y tus efectos automáticos los guardarán en localStorage)
-                if (data.rutinas) setRutinas(data.rutinas);
-                if (data.rutina_images) setRutinaImages(data.rutina_images);
-                if (data.historial) setHistorial(data.historial);
-                if (data.config) setConfig(data.config);
-                if (data.orden_rutinas) setOrdenRutinas(data.orden_rutinas);
 
-                if (data.orden_rutinas && data.orden_rutinas.length > 0) {
+            if (data) {
+                let ruts = data.rutinas;
+                let hist = data.historial || {};
+
+                // 🚀 ANTÍDOTO DE EMERGENCIA DINÁMICO
+                if (Array.isArray(ruts)) {
+                    console.warn("¡Corrupción detectada en la nube! Iniciando reconstrucción por historial...");
+                    let rutinasReconstruidas = {};
+
+                    // Escaneamos el historial intacto para extraer los nombres reales y los ejercicios de tu primo
+                    if (hist && typeof hist === 'object') {
+                        Object.values(hist).forEach(dia => {
+                            if (Array.isArray(dia)) {
+                                dia.forEach(entreno => {
+                                    if (entreno && entreno.nombre && entreno.ejercicios) {
+                                        // Rescatamos el nombre exacto que él puso ("Empuje", "Pierna", etc.)
+                                        rutinasReconstruidas[entreno.nombre] = entreno.ejercicios;
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    // Si hemos encontrado rutinas en su historial, las restauramos
+                    if (Object.keys(rutinasReconstruidas).length > 0) {
+                        ruts = rutinasReconstruidas;
+                    } else {
+                        // Si no tuviera historial (raro), lo metemos en un saco seguro para que al menos no pete la app
+                        ruts = { "Mi Rutina": ruts };
+                    }
+                }
+
+                // Actualizamos los estados con los datos limpios y convertidos en Objeto otra vez
+                if (ruts) setRutinas(ruts);
+                if (data.rutina_images) setRutinaImages(data.rutina_images);
+                if (hist) setHistorial(hist);
+                if (data.config) setConfig(data.config);
+
+                // Seteamos el orden correcto basándonos en las llaves reales reconstruidas
+                if (data.orden_rutinas && Array.isArray(data.orden_rutinas) && data.orden_rutinas.length > 0 && !Array.isArray(data.rutinas)) {
                     setOrdenRutinas(data.orden_rutinas);
-                } else if (data.rutinas) {
-                    setOrdenRutinas(Object.keys(data.rutinas));
+                } else if (ruts) {
+                    setOrdenRutinas(Object.keys(ruts));
                 }
 
                 localStorage.setItem('nube_descargada', 'true');
 
+                // 💾 AUTO-REPARACIÓN: Guardamos inmediatamente los datos corregidos en local
+                localStorage.setItem('rutinas', JSON.stringify(ruts));
+                localStorage.setItem('gymHistorial', JSON.stringify(hist));
+                localStorage.setItem('gymOrdenRutinas', JSON.stringify(Object.keys(ruts)));
+
             } else {
-                // Si la nube está vacía (primer registro), lee lo tuyo local y haz el primer respaldo
+                // Si la nube está vacía (primer registro)
                 await supabase.from('perfiles_gym').upsert({
                     id: userId, rutinas, historial, config, rutina_images: rutinaImages, orden_rutinas: ordenRutinas, updated_at: new Date()
                 });
-
                 localStorage.setItem('nube_descargada', 'true');
-
             }
         } catch (err) {
-            console.error(err.message);
+            console.error("Error en la descarga/reparación:", err.message);
         } finally {
             setCargandoNube(false);
         }
