@@ -977,6 +977,7 @@ export default function App() {
                                     return;
                                 }
                                 setRutinas(prev => ({...prev, [nombreFinal]: []}));
+                                setOrdenRutinas(prev => [...prev, nombreFinal]);
                                 setMostrarCreadorRutinas(false);
                             }}
                                     className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest transition-colors outline-none ${musculosSeleccionados.length > 0 ? 'bg-green-500 text-white active:bg-green-600' : 'bg-gray-500/20 text-gray-500 cursor-not-allowed'}`}
@@ -1418,7 +1419,13 @@ export default function App() {
                                        className={`flex-1 glass-effect glass-border rounded-2xl px-5 py-4 ${darkMode ? 'text-white' : 'text-black'} font-medium outline-none focus:border-blue-500/50`}/>
                                 <button onClick={() => {
                                     if (!nuevoGrupo.trim()) return;
-                                    setRutinas(p => ({...p, [nuevoGrupo.trim()]: []}));
+                                    const nombreFinal = nuevoGrupo.trim();
+                                    if (rutinas[nombreFinal]) {
+                                        alert("Esta rutina ya existe.");
+                                        return;
+                                    }
+                                    setRutinas(p => ({...p, [nombreFinal]: []}));
+                                    setOrdenRutinas(prev => [...prev, nombreFinal]); // <-- AQUÍ ESTÁ EL ARREGLO
                                     setNuevoGrupo('');
                                 }}
                                         className="bg-blue-600 px-7 rounded-2xl font-black text-2xl text-white active:scale-95 border-none outline-none">+
