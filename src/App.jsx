@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -147,11 +147,11 @@ const obtenerFechaLocal = () => {
 const modificarNumeroInteligente = (texto, incremento) => {
     if (!texto && texto !== 0) return (incremento > 0 ? incremento : 0).toString();
     const str = texto.toString();
-    const regex = /^(.*?)(\d+(?:\.\d+)?)(.*)$/;
+    const regex = /^(.*?)(\d+(?:[.,]\d+)?)(.*)$/;
     const match = str.match(regex);
     if (match) {
         const prefijo = match[1];
-        let numero = parseFloat(match[2]);
+        let numero = parseFloat(match[2].replace(',', '.'));
         const sufijo = match[3];
         numero += incremento;
         if (numero < 0) numero = 0;
@@ -160,6 +160,42 @@ const modificarNumeroInteligente = (texto, incremento) => {
     }
     return (incremento > 0 ? incremento : 0) + " " + str;
 };
+
+// --- UTILIDADES NUEVAS ---
+// Acepta coma decimal ("62,5") además de punto, y nunca devuelve NaN
+const parseNum = (v) => {
+    const n = parseFloat(String(v ?? '').replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+};
+
+const fechaAStr = (d) => {
+    const off = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - off).toISOString().split('T')[0];
+};
+
+const strAFecha = (s) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+};
+
+const lunesDeSemana = (d) => {
+    const c = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    c.setDate(c.getDate() - ((c.getDay() + 6) % 7));
+    return c;
+};
+
+const diasDesde = (fechaStr) => {
+    const hoy = strAFecha(obtenerFechaLocal());
+    return Math.round((hoy - strAFecha(fechaStr)) / 86400000);
+};
+
+const textoDiasDesde = (n) => (n <= 0 ? 'Hoy' : n === 1 ? 'Ayer' : `Hace ${n} días`);
+
+const volumenEntrenos = (entrenos) => (entrenos || []).reduce((tot, en) =>
+    tot + (en.ejercicios || []).reduce((t2, ej) =>
+        t2 + (ej.series || []).reduce((t3, s) => t3 + parseNum(s.peso) * parseNum(s.reps), 0), 0), 0);
+
+const formatearVolumen = (kg) => (kg >= 1000 ? `${(kg / 1000).toFixed(1).replace('.', ',')} t` : `${Math.round(kg)} kg`);
 
 const GlobalStyles = ({ darkMode }) => (
     <style>{`
@@ -215,11 +251,24 @@ const LineChart = ({ data, darkMode }) => {
                     )
                 })}
             </svg>
+            <div className="grid grid-cols-3 gap-2 mt-4">
+                {[
+                    ['Mejor', `${maxVal} kg`, ''],
+                    ['Inicio', `${data[0].rm} kg`, ''],
+                    ['Cambio', `${data[data.length - 1].rm - data[0].rm > 0 ? '+' : ''}${data[data.length - 1].rm - data[0].rm} kg`,
+                        data[data.length - 1].rm - data[0].rm >= 0 ? 'text-green-500' : 'text-red-500'],
+                ].map(([etiqueta, valor, color]) => (
+                    <div key={etiqueta} className={`rounded-2xl py-3 text-center ${darkMode ? 'bg-white/5' : 'bg-black/5'}`}>
+                        <div className={`text-base font-black tabular-nums ${color || (darkMode ? 'text-white' : 'text-gray-900')}`}>{valor}</div>
+                        <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mt-0.5">{etiqueta}</div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
 
-function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onToggleCheck, darkMode, showConfirm, ejercicioNombre, mostrar1RM }) {
+function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onToggleCheck, darkMode, showConfirm, ejercicioNombre, mostrar1RM, mejorRM = 0 }) {
     const confirmarEliminar = () => { showConfirm("Borrar Serie", "¿Estás seguro de que quieres borrar esta serie?", onEliminar); };
 
     const containerClasses = serie.completada ? 'bg-blue-600/10 border-blue-500/30' : 'glass-effect glass-border';
@@ -231,10 +280,12 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
     const handleStepReps = (inc) => onChangeReps(modificarNumeroInteligente(serie.nuevoReps || serie.reps || "0", inc));
 
     // Cálculos en vivo de Gamificación (Llamando al nuevo RM Inteligente)
-    const pesoCalc = parseFloat(serie.nuevoPeso || serie.peso || 0);
-    const repsCalc = parseFloat(serie.nuevoReps || serie.reps || 0);
+    const pesoCalc = parseNum(serie.nuevoPeso || serie.peso);
+    const repsCalc = parseNum(serie.nuevoReps || serie.reps);
     const rm = calcular1RMInteligente(pesoCalc, repsCalc, ejercicioNombre);
     const rango = obtenerRango(rm, ejercicioNombre);
+    // 🏆 Récord personal: supera tu mejor 1RM histórico y la serie está marcada como hecha
+    const esPR = serie.completada && mejorRM > 0 && rm > mejorRM;
 
     return (
         <div className={`p-4 rounded-2xl border mb-3 transition-all duration-300 ${containerClasses}`}>
@@ -246,6 +297,11 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
                     <span className={`flex-none w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-black tracking-tighter shrink-0 ${darkMode ? 'bg-white/10 text-gray-400' : 'bg-black/5 text-gray-500'}`}>
                         {index + 1}
                     </span>
+                    {esPR && (
+                        <div className="ml-1 px-2.5 py-1 rounded-lg bg-yellow-500/20 text-yellow-500 text-[9px] font-black uppercase tracking-widest shrink-0 animate-in zoom-in duration-200">
+                            🏆 Récord
+                        </div>
+                    )}
                     {/* INSIGNIA DE RANGO Y 1RM EN VIVO (Muestra solo si está activado en Ajustes) */}
                     {mostrar1RM && rango && (
                         <div className={`ml-1 px-2.5 py-1 rounded-lg ${rango.bg} ${rango.color} text-[9px] font-black uppercase tracking-widest truncate animate-in zoom-in duration-200`}>
@@ -283,12 +339,14 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
     );
 }
 
-function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEjercicio, onEditarNombre, darkMode, showConfirm, mostrar1RM }) {
+function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEjercicio, onEditarNombre, darkMode, showConfirm, mostrar1RM, mejorRM = 0 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ejercicio.id });
     const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : 1, opacity: isDragging ? 0.9 : 1 };
 
     const bgContainer = darkMode ? 'bg-[#0b0e14]/80' : 'bg-white/80';
     const textColor = darkMode ? 'text-gray-100' : 'text-gray-800';
+    const totalSeries = ejercicio.series.length;
+    const seriesHechas = ejercicio.series.filter(s => s.completada).length;
 
     return (
         <div ref={setNodeRef} style={style} className={`${bgContainer} glass-border rounded-[1.5rem] mb-6 overflow-hidden`}>
@@ -297,7 +355,12 @@ function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEje
                     <div {...attributes} {...listeners} className={`cursor-grab active:cursor-grabbing p-2.5 rounded-xl touch-none ${darkMode ? 'text-gray-500 bg-white/5' : 'text-gray-400 bg-black/5'}`}>
                         <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 100 4 2 2 0 000-4zM7 8a2 2 0 100 4 2 2 0 000-4zM7 14a2 2 0 100 4 2 2 0 000-4zM13 2a2 2 0 100 4 2 2 0 000-4zM13 8a2 2 0 100 4 2 2 0 000-4zM13 14a2 2 0 100 4 2 2 0 000-4z" /></svg>
                     </div>
-                    <h3 className={`font-black text-[1.1rem] ${textColor} uppercase tracking-tight truncate`}>{ejercicio.nombre}</h3>
+                    <div className="min-w-0">
+                        <h3 className={`font-black text-[1.1rem] ${textColor} uppercase tracking-tight truncate`}>{ejercicio.nombre}</h3>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${totalSeries > 0 && seriesHechas === totalSeries ? 'text-green-500' : 'text-gray-500'}`}>
+                            {seriesHechas}/{totalSeries} {totalSeries === 1 ? 'serie' : 'series'}
+                        </p>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
@@ -312,7 +375,7 @@ function Ejercicio({ ejercicio, onActualizarSerie, onAgregarSerie, onEliminarEje
             <div className="p-4">
                 {ejercicio.series.map((serie, index) => (
                     <SerieInput
-                        key={serie.id} index={index} serie={serie} darkMode={darkMode} showConfirm={showConfirm} ejercicioNombre={ejercicio.nombre} mostrar1RM={mostrar1RM}
+                        key={serie.id} index={index} serie={serie} darkMode={darkMode} showConfirm={showConfirm} ejercicioNombre={ejercicio.nombre} mostrar1RM={mostrar1RM} mejorRM={mejorRM}
                         onChangePeso={v => onActualizarSerie(serie.id, 'nuevoPeso', v)}
                         onChangeReps={v => onActualizarSerie(serie.id, 'nuevoReps', v)}
                         onEliminar={() => onActualizarSerie(serie.id, 'eliminar')}
@@ -351,6 +414,45 @@ export default function App() {
         return JSON.parse(localStorage.getItem('gymOrdenRutinas')) || Object.keys(JSON.parse(localStorage.getItem('rutinas')) || {'Pecho - Triceps': []});
     });
 
+    // 📊 Estadísticas derivadas del historial (solo lectura, no tocan tus datos)
+    const stats = useMemo(() => {
+        const fechas = Object.keys(historial || {}).filter(f => Array.isArray(historial[f]) && historial[f].length > 0);
+        const setSemanas = new Set(fechas.map(f => fechaAStr(lunesDeSemana(strAFecha(f)))));
+        let racha = 0;
+        const cursor = lunesDeSemana(new Date());
+        if (!setSemanas.has(fechaAStr(cursor))) cursor.setDate(cursor.getDate() - 7);
+        while (setSemanas.has(fechaAStr(cursor))) {
+            racha++;
+            cursor.setDate(cursor.getDate() - 7);
+        }
+        const hoyStr = obtenerFechaLocal();
+        const lunes = lunesDeSemana(new Date());
+        const semana = DIAS_SEMANA.map((letra, i) => {
+            const d = new Date(lunes);
+            d.setDate(lunes.getDate() + i);
+            const f = fechaAStr(d);
+            return { letra, entrenado: fechas.includes(f), hoy: f === hoyStr };
+        });
+        const diasMes = fechas.filter(f => f.startsWith(hoyStr.slice(0, 7))).length;
+        const ultimo = {};
+        [...fechas].sort().forEach(f => historial[f].forEach(en => { ultimo[en.nombre] = f; }));
+        return { racha, semana, diasMes, ultimo };
+    }, [historial]);
+
+    // 🏆 Mejor 1RM histórico por ejercicio (para detectar récords)
+    const mejoresRM = useMemo(() => {
+        const mapa = {};
+        Object.values(historial || {}).forEach(dia => {
+            if (!Array.isArray(dia)) return;
+            dia.forEach(en => (en.ejercicios || []).forEach(ej => (ej.series || []).forEach(s => {
+                const rm = calcular1RMInteligente(parseNum(s.peso), parseNum(s.reps), ej.nombre);
+                if (rm > (mapa[ej.nombre] || 0)) mapa[ej.nombre] = rm;
+            })));
+        });
+        return mapa;
+    }, [historial]);
+
+    const [resumenGuardado, setResumenGuardado] = useState(null);
     const [nuevoEjercicio, setNuevoEjercicio] = useState('');
     const [nuevoGrupo, setNuevoGrupo] = useState('');
     const [confirmacionVisible, setConfirmacionVisible] = useState(false);
@@ -374,6 +476,8 @@ export default function App() {
     const [fechaSeleccionada, setFechaSeleccionada] = useState(obtenerFechaLocal());
 
     const timerRef = useRef(null);
+    const finTimerRef = useRef(0);
+    const finTimeoutRef = useRef(null);
     const [modal, setModal] = useState({
         show: false,
         type: '',
@@ -435,6 +539,11 @@ export default function App() {
     useEffect(() => {
         localStorage.setItem('gymOrdenRutinas', JSON.stringify(ordenRutinas));
     }, [ordenRutinas]);
+
+    useEffect(() => () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (finTimeoutRef.current) clearTimeout(finTimeoutRef.current);
+    }, []);
 
     // 🌟 CONTROLADOR PARA EL ARRASTRE DE RUTINAS
     const handleDragEndRutinas = (event) => {
@@ -579,12 +688,14 @@ export default function App() {
     const iniciarTimer = () => {
         if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
         const tiempoFinal = Date.now() + (config.descanso * 1000);
+        finTimerRef.current = tiempoFinal;
+        if (finTimeoutRef.current) clearTimeout(finTimeoutRef.current);
         setTiempo(config.descanso);
         setTimerActivo(true);
         if (timerRef.current) clearInterval(timerRef.current);
 
         timerRef.current = setInterval(() => {
-            const restante = Math.round((tiempoFinal - Date.now()) / 1000);
+            const restante = Math.round((finTimerRef.current - Date.now()) / 1000);
             if (restante <= 0) {
                 clearInterval(timerRef.current);
                 setTiempo(0);
@@ -592,11 +703,17 @@ export default function App() {
                 if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification("⏱️ ¡Descanso terminado!", {body: "A por la siguiente serie. ¡Duro!"});
                 }
-                setTimeout(() => setTimerActivo(false), 2000);
+                finTimeoutRef.current = setTimeout(() => setTimerActivo(false), 2000);
             } else {
                 setTiempo(restante);
             }
         }, 1000);
+    };
+
+    const ajustarTimer = (seg) => {
+        if (!timerActivo || tiempo <= 0) return;
+        finTimerRef.current += seg * 1000;
+        setTiempo(Math.max(0, Math.round((finTimerRef.current - Date.now()) / 1000)));
     };
 
     const editarNombreRutinaMain = (nombreViejo) => {
@@ -663,7 +780,10 @@ export default function App() {
     };
 
     const actualizarSerie = (idEj, idS, campo, valor) => {
-        if (campo === 'completada' && valor === true) iniciarTimer();
+        if (campo === 'completada' && valor === true) {
+            iniciarTimer();
+            if (navigator.vibrate) navigator.vibrate(15);
+        }
         setRutinas(prev => {
             const copiaGrupo = [...prev[gruposel]];
             const idxEj = copiaGrupo.findIndex(e => e.id === idEj);
@@ -682,10 +802,11 @@ export default function App() {
             const idxEj = copiaGrupo.findIndex(e => e.id === idEj);
             if (idxEj === -1) return prev;
             const copiaEj = {...copiaGrupo[idxEj]};
+            const ultimaSerie = copiaEj.series[copiaEj.series.length - 1];
             copiaEj.series = [...copiaEj.series, {
                 id: Date.now(),
-                peso: '',
-                reps: '',
+                peso: ultimaSerie ? (ultimaSerie.nuevoPeso || ultimaSerie.peso || '') : '',
+                reps: ultimaSerie ? (ultimaSerie.nuevoReps || ultimaSerie.reps || '') : '',
                 nuevoPeso: '',
                 nuevoReps: '',
                 completada: false
@@ -709,6 +830,16 @@ export default function App() {
         }));
 
         const fechaLocal = obtenerFechaLocal();
+
+        // 📈 Resumen de la sesión para el aviso de guardado
+        let serHechas = 0, volHecho = 0;
+        rutinas[gruposel].forEach(ej => ej.series.forEach(s => {
+            if (s.completada) {
+                serHechas++;
+                volHecho += parseNum(s.nuevoPeso || s.peso) * parseNum(s.nuevoReps || s.reps);
+            }
+        }));
+        setResumenGuardado({series: serHechas, volumen: volHecho});
 
         // 1. 🌟 GENERAMOS EL NUEVO HISTORIAL SÍNCRONAMENTE (Para evitar lag en la nube)
         const nuevoHistorial = { ...historial };
@@ -840,7 +971,7 @@ export default function App() {
                     if (ej.nombre === nombreEj) {
                         let maxRmDia = 0;
                         ej.series.forEach(s => {
-                            const rm = calcular1RMInteligente(parseFloat(s.peso || 0), parseFloat(s.reps || 0), ej.nombre);
+                            const rm = calcular1RMInteligente(parseNum(s.peso), parseNum(s.reps), ej.nombre);
                             if (rm > maxRmDia) maxRmDia = rm;
                         });
                         if (maxRmDia > 0) {
@@ -862,6 +993,29 @@ export default function App() {
     // Calculadora Aislada logic
     const rmCalcAislada = calcular1RMInteligente(parseFloat(calcPeso || 0), parseFloat(calcReps || 0), calcEj);
     const rangoCalcAislada = obtenerRango(rmCalcAislada, calcEj);
+
+    const resumenMes = (() => {
+        const pref = `${fechaCalendario.getFullYear()}-${String(fechaCalendario.getMonth() + 1).padStart(2, '0')}`;
+        const dias = Object.keys(historial).filter(f => f.startsWith(pref) && Array.isArray(historial[f]) && historial[f].length > 0);
+        return {
+            dias: dias.length,
+            sesiones: dias.reduce((t, f) => t + historial[f].length, 0),
+            volumen: dias.reduce((t, f) => t + volumenEntrenos(historial[f]), 0)
+        };
+    })();
+
+    const progresoSesion = (() => {
+        const ejs = (gruposel && rutinas[gruposel]) || [];
+        let total = 0, hechas = 0, volumen = 0;
+        ejs.forEach(ej => ej.series.forEach(s => {
+            total++;
+            if (s.completada) {
+                hechas++;
+                volumen += parseNum(s.nuevoPeso || s.peso) * parseNum(s.nuevoReps || s.reps);
+            }
+        }));
+        return {total, hechas, volumen};
+    })();
 
     const mainBg = darkMode ? 'bg-gradient-to-br from-[#05070a] via-[#0a0d14] to-[#020305] text-gray-200' : 'bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0] text-gray-900';
     const textGradient = 'bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500';
@@ -1081,6 +1235,19 @@ export default function App() {
                             </div>
                         </div>
 
+                        <div className="grid grid-cols-3 gap-3 mb-8">
+                            {[
+                                [resumenMes.dias, resumenMes.dias === 1 ? 'Día' : 'Días'],
+                                [resumenMes.sesiones, resumenMes.sesiones === 1 ? 'Sesión' : 'Sesiones'],
+                                [formatearVolumen(resumenMes.volumen), 'Volumen']
+                            ].map(([valor, etiqueta]) => (
+                                <div key={etiqueta} className="glass-effect glass-border rounded-2xl py-4 px-2 text-center">
+                                    <div className={`text-xl font-black tracking-tighter tabular-nums ${darkMode ? 'text-white' : 'text-gray-900'}`}>{valor}</div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mt-1">{etiqueta}</div>
+                                </div>
+                            ))}
+                        </div>
+
                         {/* DETALLE DEL FEED */}
                         <div className="mb-4">
                             <h3 className={`text-xs font-black uppercase tracking-[0.2em] mb-4 ml-2 text-gray-500`}>
@@ -1096,7 +1263,10 @@ export default function App() {
                                 <div className="space-y-4">
                                     {historial[fechaSeleccionada].map((entreno, idx) => (
                                         <div key={idx} className="glass-effect glass-border p-6 rounded-[1.5rem]">
-                                            <h4 className={`text-xl font-black uppercase tracking-tight mb-5 ${darkMode ? 'text-green-400' : 'text-green-600'}`}>{entreno.nombre}</h4>
+                                            <div className="flex items-baseline justify-between gap-3 mb-5">
+                                                <h4 className={`text-xl font-black uppercase tracking-tight truncate ${darkMode ? 'text-green-400' : 'text-green-600'}`}>{entreno.nombre}</h4>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 shrink-0">{formatearVolumen(volumenEntrenos([entreno]))}</span>
+                                            </div>
                                             <div className="space-y-5">
                                                 {entreno.ejercicios.map((ej, ejIdx) => (
                                                     <div key={ejIdx}>
@@ -1105,7 +1275,7 @@ export default function App() {
                                                         <div className="mt-2 space-y-1.5 pl-1">
                                                             {ej.series.map((s, sIdx) => {
                                                                 // Gamificación en el feed histórico
-                                                                const rmHist = calcular1RMInteligente(parseFloat(s.peso || 0), parseFloat(s.reps || 0), ej.nombre);
+                                                                const rmHist = calcular1RMInteligente(parseNum(s.peso), parseNum(s.reps), ej.nombre);
                                                                 const rangoHist = mostrar1RM ? obtenerRango(rmHist, ej.nombre) : null;
                                                                 return (
                                                                     <div key={sIdx}
@@ -1339,6 +1509,33 @@ export default function App() {
                                 entrenamiento</p>
                         </div>
 
+                        <div className="glass-effect glass-border rounded-[1.5rem] p-5 mb-8">
+                            <div className="flex items-start justify-between mb-4">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Racha semanal</p>
+                                    <p className={`text-xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        {stats.racha > 0 ? `🔥 ${stats.racha} ${stats.racha === 1 ? 'semana' : 'semanas'}` : 'Empieza hoy'}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Este mes</p>
+                                    <p className={`text-xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        {stats.diasMes} {stats.diasMes === 1 ? 'día' : 'días'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-7 gap-2">
+                                {stats.semana.map((d, i) => (
+                                    <div key={i} className="flex flex-col items-center gap-1.5">
+                                        <div className={`w-full aspect-square max-w-[2.75rem] rounded-xl flex items-center justify-center text-sm font-black ${d.entrenado ? 'bg-green-500 text-white' : d.hoy ? 'border-2 border-blue-500 text-blue-500' : darkMode ? 'bg-white/5 text-gray-600' : 'bg-black/5 text-gray-400'}`}>
+                                            {d.entrenado ? '✓' : ''}
+                                        </div>
+                                        <span className={`text-[10px] font-black ${d.hoy ? 'text-blue-500' : 'text-gray-500'}`}>{d.letra}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         {/* 👇 NUEVO: Envolvemos toda tu lista con el contexto de arrastre */}
                         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndRutinas}>
                             <SortableContext items={ordenRutinas} strategy={verticalListSortingStrategy}>
@@ -1378,6 +1575,9 @@ export default function App() {
                                                     </div>
                                                     <button onClick={() => setgruposel(grupo)} className="flex-1 p-5 text-left active:opacity-80 overflow-hidden outline-none">
                                                         <span className={`block w-full text-[1.1rem] font-black uppercase tracking-tight truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{grupo}</span>
+<span className={`block mt-1 text-[10px] font-bold tracking-wide truncate ${stats.ultimo[grupo] === obtenerFechaLocal() ? 'text-green-500' : 'text-gray-500'}`}>
+    {rutinas[grupo].length} {rutinas[grupo].length === 1 ? 'ejercicio' : 'ejercicios'} · {stats.ultimo[grupo] ? textoDiasDesde(diasDesde(stats.ultimo[grupo])) : 'Sin registrar'}
+</span>
                                                     </button>
                                                     <button onClick={() => editarNombreRutinaMain(grupo)} className={`w-12 flex items-center justify-center transition-colors border-l ${darkMode ? 'border-white/5 text-blue-400 active:bg-blue-400/10' : 'border-black/5 text-blue-600 active:bg-blue-600/10'} outline-none`}>
                                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1457,20 +1657,44 @@ export default function App() {
                                 </button>
                             </div>
 
+                            {progresoSesion.total > 0 && (
+                                <div className="mt-3">
+                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">
+                                        <span>{progresoSesion.hechas}/{progresoSesion.total} series</span>
+                                        <span>{formatearVolumen(progresoSesion.volumen)}</span>
+                                    </div>
+                                    <div className="h-1.5 rounded-full bg-gray-500/20 overflow-hidden">
+                                        <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-green-400 transition-all duration-500"
+                                             style={{width: `${(progresoSesion.hechas / progresoSesion.total) * 100}%`}}/>
+                                    </div>
+                                </div>
+                            )}
+
                             {timerActivo && (
-                                <div
-                                    className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 flex items-center justify-between animate-in zoom-in-95 duration-200">
-                                    <span
-                                        className="text-xs font-black uppercase text-blue-100 tracking-widest opacity-90">Descanso</span>
-                                    <span
-                                        className="text-2xl font-black tabular-nums text-white">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
-                                    <button onClick={() => setTimerActivo(false)}
-                                            className="text-[10px] font-black bg-black/20 text-white px-3 py-1.5 rounded-md uppercase tracking-wider outline-none">Saltar
-                                    </button>
+                                <div className="mt-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 animate-in zoom-in-95 duration-200">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-black uppercase text-blue-100 tracking-widest opacity-90">Descanso</span>
+                                        <span className="text-2xl font-black tabular-nums text-white">{Math.floor(tiempo / 60)}:{(tiempo % 60).toString().padStart(2, '0')}</span>
+                                        <div className="flex gap-1.5">
+                                            <button onClick={() => ajustarTimer(-30)} className="text-[10px] font-black bg-black/20 text-white px-2.5 py-1.5 rounded-md tracking-wider outline-none">-30</button>
+                                            <button onClick={() => ajustarTimer(30)} className="text-[10px] font-black bg-black/20 text-white px-2.5 py-1.5 rounded-md tracking-wider outline-none">+30</button>
+                                            <button onClick={() => setTimerActivo(false)} className="text-[10px] font-black bg-black/20 text-white px-3 py-1.5 rounded-md uppercase tracking-wider outline-none">Saltar</button>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 h-1 rounded-full bg-black/20 overflow-hidden">
+                                        <div className="h-full bg-white/80 rounded-full transition-all duration-1000 ease-linear"
+                                             style={{width: `${Math.min(100, (tiempo / (config.descanso || 120)) * 100)}%`}}/>
+                                    </div>
                                 </div>
                             )}
                         </div>
 
+                        {rutinas[gruposel].length === 0 && (
+                            <div className={`p-8 rounded-[2rem] border border-dashed text-center mb-4 ${darkMode ? 'border-gray-800 text-gray-500' : 'border-gray-300 text-gray-400'}`}>
+                                <p className="font-bold text-sm">Esta rutina está vacía.</p>
+                                <p className="text-xs mt-1">Añade tu primer ejercicio desde la librería o escríbelo abajo.</p>
+                            </div>
+                        )}
                         <DndContext sensors={sensors} collisionDetection={closestCenter}
                                     onDragEnd={({active, over}) => {
                                         if (active.id !== over?.id) {
@@ -1493,7 +1717,8 @@ export default function App() {
                                                        ...p,
                                                        [gruposel]: p[gruposel].filter(x => x.id !== ej.id)
                                                    }))} onEditarNombre={editarNombreEjercicio} darkMode={darkMode}
-                                                   showConfirm={showConfirm} mostrar1RM={mostrar1RM}/>
+                                                   showConfirm={showConfirm} mostrar1RM={mostrar1RM}
+                                                   mejorRM={mejoresRM[ej.nombre] || 0}/>
                                     ))}
                                 </div>
                             </SortableContext>
@@ -1524,14 +1749,14 @@ export default function App() {
                     </div>
                 )}
                 {confirmacionVisible && <div
-                    className="fixed top-24 left-1/2 -translate-x-1/2 bg-green-500/90 backdrop-blur-md text-white px-8 py-4 rounded-full font-black tracking-widest shadow-xl z-[100] animate-in slide-in-from-top-10 fade-in duration-300 pointer-events-none">¡GUARDADO!</div>}
+                    className="fixed top-24 left-1/2 -translate-x-1/2 bg-green-500/90 backdrop-blur-md text-white px-8 py-4 rounded-full font-black tracking-widest shadow-xl z-[100] animate-in slide-in-from-top-10 fade-in duration-300 pointer-events-none text-center"><div>¡GUARDADO!</div>{resumenGuardado && resumenGuardado.series > 0 && <div className="text-[11px] font-bold tracking-normal opacity-90 mt-0.5">{resumenGuardado.series} {resumenGuardado.series === 1 ? 'serie' : 'series'} · {formatearVolumen(resumenGuardado.volumen)}</div>}</div>}
             </main>
 
             {gruposel === null && (
                 <nav className="fixed bottom-0 left-0 right-0 glass-nav border-t border-gray-500/10 p-5 z-[100] pb-8">
                     <div className="max-w-xl mx-auto flex justify-around items-center">
                         <button onClick={() => setSeccion('rutinas')}
-                                className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'rutinas' ? 'text-blue-500' : 'text-gray-500'}`}>
+                                className={`outline-none relative flex flex-col items-center gap-1.5 transition-colors ${seccion === 'rutinas' ? 'text-blue-500 after:content-[""] after:absolute after:-top-5 after:left-1/2 after:-translate-x-1/2 after:h-0.5 after:w-8 after:rounded-full after:bg-blue-500' : 'text-gray-500'}`}>
                             <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
                                 <path
                                     d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
@@ -1540,7 +1765,7 @@ export default function App() {
                         </button>
 
                         <button onClick={() => setSeccion('progreso')}
-                                className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'progreso' ? 'text-blue-500' : 'text-gray-500'}`}>
+                                className={`outline-none relative flex flex-col items-center gap-1.5 transition-colors ${seccion === 'progreso' ? 'text-blue-500 after:content-[""] after:absolute after:-top-5 after:left-1/2 after:-translate-x-1/2 after:h-0.5 after:w-8 after:rounded-full after:bg-blue-500' : 'text-gray-500'}`}>
                             <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd"
                                       d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
@@ -1550,7 +1775,7 @@ export default function App() {
                         </button>
 
                         <button onClick={() => setSeccion('ajustes')}
-                                className={`outline-none flex flex-col items-center gap-1.5 transition-colors ${seccion === 'ajustes' ? 'text-blue-500' : 'text-gray-500'}`}>
+                                className={`outline-none relative flex flex-col items-center gap-1.5 transition-colors ${seccion === 'ajustes' ? 'text-blue-500 after:content-[""] after:absolute after:-top-5 after:left-1/2 after:-translate-x-1/2 after:h-0.5 after:w-8 after:rounded-full after:bg-blue-500' : 'text-gray-500'}`}>
                             <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd"
                                       d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
