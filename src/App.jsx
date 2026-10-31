@@ -290,7 +290,7 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
     return (
         <div className={`p-4 rounded-2xl border mb-3 transition-all duration-300 ${containerClasses}`}>
             <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3 flex-1">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
                     <button onClick={onToggleCheck} className={`w-7 h-7 rounded-xl border-2 flex items-center justify-center transition-all duration-300 shrink-0 ${serie.completada ? 'bg-blue-600 border-blue-600' : 'border-gray-500/50'}`}>
                         {serie.completada && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     </button>
@@ -298,13 +298,13 @@ function SerieInput({ serie, index, onChangePeso, onChangeReps, onEliminar, onTo
                         {index + 1}
                     </span>
                     {esPR && (
-                        <div className="ml-1 px-2.5 py-1 rounded-lg bg-yellow-500/20 text-yellow-500 text-[9px] font-black uppercase tracking-widest shrink-0 animate-in zoom-in duration-200">
-                            🏆 Récord
+                        <div title="Récord personal" className="px-1.5 py-1 rounded-lg bg-yellow-500/20 text-xs leading-none shrink-0 animate-in zoom-in duration-200">
+                            🏆
                         </div>
                     )}
                     {/* INSIGNIA DE RANGO Y 1RM EN VIVO (Muestra solo si está activado en Ajustes) */}
                     {mostrar1RM && rango && (
-                        <div className={`ml-1 px-2.5 py-1 rounded-lg ${rango.bg} ${rango.color} text-[9px] font-black uppercase tracking-widest truncate animate-in zoom-in duration-200`}>
+                        <div className={`min-w-0 px-2.5 py-1 rounded-lg ${rango.bg} ${rango.color} text-[9px] font-black uppercase tracking-widest truncate animate-in zoom-in duration-200`}>
                             {rango.nombre} <span className="opacity-50 mx-1">•</span> 1RM: {rm}KG
                         </div>
                     )}
